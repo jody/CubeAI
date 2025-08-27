@@ -100,7 +100,7 @@
         }
         
         #scramble-btn:hover {
-            box-shadow: 0 5px 15px rgba(247, 37, 133, 0.4);
+            box-shadow: 0 5-px 15px rgba(247, 37, 133, 0.4);
         }
 
         #solve-btn {
@@ -177,7 +177,9 @@
             <strong>SOLVE:</strong> Animate the solution for a scrambled cube.
         </div>
     </div>
-
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
     <script>
         let scene, camera, renderer, cubeGroup;
         let cubelets = [];
@@ -203,6 +205,12 @@
             up:    { axis: 'y', angle:  Math.PI / 2 },
             down:  { axis: 'y', angle: -Math.PI / 2 }
         };
+        const colorMap = {
+            [colors.up]: 'U', [colors.down]: 'D', 
+            [colors.front]: 'F', [colors.back]: 'B',
+            [colors.left]: 'L', [colors.right]: 'R',
+            0x1a1a1a: 'X' // Non-visible face
+        };
 
         // --- INITIALIZATION ---
         function loadThreeJS() {
@@ -214,7 +222,7 @@
                 document.head.appendChild(script);
             });
         }
-
+        
         async function initApp() {
             try {
                 document.getElementById('loading').textContent = 'Loading Three.js library...';
@@ -294,7 +302,6 @@
 
         // --- CORE ROTATION LOGIC ---
 
-        // FIX #1: Restored the body of the rotateCube function for whole-cube rotations.
         function rotateCube(axis, direction) {
             if (isAnimating) return;
 
@@ -321,13 +328,11 @@
             animateRotation();
         }
 
-        // FIX #2: Created a handler for user clicks to check the animation flag.
         async function handleFaceButtonClick(move) {
             if (isAnimating) return;
             await performMove(move);
         }
-
-        // FIX #3: Removed the isAnimating check from performMove so it can be called by other functions.
+        
         async function performMove(move) {
             const faceName = faces[move.charAt(0)];
             const isPrime = move.includes("'");
@@ -335,7 +340,6 @@
             const turns = isDouble ? 2 : (isPrime ? 3 : 1);
             
             for (let i = 0; i < turns; i++) {
-                // The third parameter (duration) is now passed here.
                 await rotateFace(faceName, 300);
             }
         }
@@ -361,7 +365,7 @@
                 });
 
                 scene.add(faceGroup);
-                faceCubelets.forEach(c => cubeGroup.attach(c)); // Use attach to keep world position
+                faceCubelets.forEach(c => cubeGroup.attach(c));
                 faceCubelets.forEach(c => faceGroup.attach(c));
                 
                 const startTime = Date.now();
@@ -376,7 +380,7 @@
                     } else {
                         faceGroup.updateMatrixWorld();
                         faceCubelets.forEach(c => {
-                            cubeGroup.attach(c); // Re-attach to the main group
+                            cubeGroup.attach(c);
                             updateCubeletLogicalState(c, face);
                         });
                         scene.remove(faceGroup);
@@ -413,6 +417,271 @@
             cubelet.userData.faceColors = n;
         }
 
+        // --- CUBE STATE CONVERSION ---
+        function getCubeState() {
+            const state = {};
+            cubelets.forEach(cubelet => {
+                const pos = cubelet.userData.logicalPosition;
+                const stickers = cubelet.userData.faceColors;
+                const key = `(${pos.x},${pos.y},${pos.z})`;
+                
+                let facesWithStickers = Object.keys(stickers)
+                    .filter(face => stickers[face] !== 0x1a1a1a)
+                    .map(face => colorMap[stickers[face]]);
+
+                state[key] = {
+                    pos: { x: pos.x, y: pos.y, z: pos.z },
+                    colors: facesWithStickers
+                };
+            });
+            return state;
+        }
+
+        // --- CUBE SOLVER (BEGINNER'S METHOD) ---
+        class CubeSolver {
+            constructor(performMoveFn, cubeStateFn) {
+                this.performMove = performMoveFn;
+                this.getCubeState = cubeStateFn;
+                this.solutionMoves = [];
+                this.state = {};
+            }
+
+            async solve() {
+                this.solutionMoves = [];
+                this.state = this.getCubeState();
+                
+                const centers = {
+                    'U': this.state['(0,1,0)'].colors[0],
+                    'D': this.state['(0,-1,0)'].colors[0],
+                    'F': this.state['(0,0,1)'].colors[0],
+                    'B': this.state['(0,0,-1)'].colors[0],
+                    'L': this.state['(-1,0,0)'].colors[0],
+                    'R': this.state['(1,0,0)'].colors[0],
+                };
+                const white = centers.U;
+                const yellow = centers.D;
+                
+                const findPiece = (c1, c2, c3 = null) => {
+                    const keys = Object.keys(this.state);
+                    for(const key of keys) {
+                        const piece = this.state[key];
+                        if (c3) {
+                            if(piece.colors.includes(c1) && piece.colors.includes(c2) && piece.colors.includes(c3)) return piece;
+                        } else {
+                            if(piece.colors.includes(c1) && piece.colors.includes(c2)) return piece;
+                        }
+                    }
+                    return null;
+                };
+                
+                const doMoves = async(moves) => {
+                    const moveArray = moves.split(' ');
+                    for(const move of moveArray) {
+                        if(move) {
+                            await this.performMove(move);
+                            this.solutionMoves.push(move);
+                            this.state = this.getCubeState();
+                        }
+                    }
+                };
+
+                // Phase 1: White Cross
+                const whiteEdges = [
+                    { x: 0, y: 1, z: 1, sideColor: 'F' }, // UF
+                    { x: 1, y: 1, z: 0, sideColor: 'R' }, // UR
+                    { x: 0, y: 1, z: -1, sideColor: 'B' },// UB
+                    { x: -1, y: 1, z: 0, sideColor: 'L' }  // UL
+                ];
+                
+                for(let i=0; i<whiteEdges.length; i++) {
+                    const target = whiteEdges[i];
+                    let piece = findPiece(white, centers[target.sideColor]);
+                    while(piece && !(piece.pos.y === 1 && piece.colors.includes(white))) {
+                        // Find piece and bring it to D layer
+                        let currentPos = piece.pos;
+                        if(currentPos.y === 1) { // On U face, but wrong orientation or position
+                           await doMoves('F2');
+                        } else if(currentPos.x === 0 && currentPos.z === 1) { // On F face
+                           if(piece.colors.includes(white)) await doMoves('F D');
+                           else await doMoves('F');
+                        } else if(currentPos.x === 1 && currentPos.z === 0) { // On R face
+                           if(piece.colors.includes(white)) await doMoves('R D');
+                           else await doMoves('R');
+                        } else if(currentPos.x === 0 && currentPos.z === -1) { // On B face
+                           if(piece.colors.includes(white)) await doMoves('B D');
+                           else await doMoves('B');
+                        } else if(currentPos.x === -1 && currentPos.z === 0) { // On L face
+                           if(piece.colors.includes(white)) await doMoves('L D');
+                           else await doMoves('L');
+                        }
+                        
+                        // Piece is now on D face. Align and move up.
+                        piece = findPiece(white, centers[target.sideColor]);
+                        currentPos = piece.pos;
+                        let dTurns = 0;
+                        while( (currentPos.x !== target.x || currentPos.z !== target.z) || piece.colors.includes(white) ) {
+                            await doMoves('D');
+                            dTurns++;
+                            if (dTurns > 4) break;
+                            piece = findPiece(white, centers[target.sideColor]);
+                            currentPos = piece.pos;
+                        }
+                        await doMoves(target.sideColor + '2');
+                        this.state = this.getCubeState();
+                        piece = findPiece(white, centers[target.sideColor]);
+                    }
+                }
+                
+                // Phase 2: White Corners
+                const whiteCorners = [
+                    { x: 1, y: 1, z: 1, sides: ['F', 'R'] }, // UFR
+                    { x: -1, y: 1, z: 1, sides: ['F', 'L'] },// UFL
+                    { x: -1, y: 1, z: -1, sides: ['B', 'L'] },// UBL
+                    { x: 1, y: 1, z: -1, sides: ['B', 'R'] } // UBR
+                ];
+                
+                for(let i=0; i<whiteCorners.length; i++) {
+                    const target = whiteCorners[i];
+                    let piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                        // Position corner above its spot
+                        let pos = piece.pos;
+                        while(pos.y === 1 || !(pos.x === target.x && pos.z === target.z)) {
+                            await doMoves('D');
+                            this.state = this.getCubeState();
+                            piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                            pos = piece.pos;
+                        }
+                        
+                        // Insert corner using R U R' U'
+                        let counter = 0;
+                        while(! (piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z && piece.colors.includes(white)) ) {
+                           await doMoves('R U R\' U\'');
+                           this.state = this.getCubeState();
+                           piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                           counter++;
+                           if(counter > 10) break; // Safety break
+                        }
+                    }
+                }
+
+                // Phase 3: Middle Layer
+                const middleEdges = [
+                    { x: 1, y: 0, z: 1, sides: ['F', 'R'] },
+                    { x: -1, y: 0, z: 1, sides: ['F', 'L'] },
+                    { x: -1, y: 0, z: -1, sides: ['B', 'L'] },
+                    { x: 1, y: 0, z: -1, sides: ['B', 'R'] },
+                ];
+
+                for(let i=0; i<middleEdges.length; i++) {
+                    const target = middleEdges[i];
+                    let piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+
+                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                         // Find a piece not on the bottom layer or already in place
+                         let pos = piece.pos;
+                         if(pos.y !== -1) {
+                             if(pos.x === 1 && pos.z === 1) await doMoves("R U' R' U'");
+                             else if (pos.x === -1 && pos.z === 1) await doMoves("L' U L U");
+                             else if (pos.x === -1 && pos.z === -1) await doMoves("L' U' L U");
+                             else if (pos.x === 1 && pos.z === -1) await doMoves("R U R' U'");
+                             this.state = this.getCubeState();
+                             piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             pos = piece.pos;
+                         }
+
+                         // Align the piece with its front face
+                         const frontColor = centers[target.sides[0]];
+                         const pieceFrontColor = (Math.abs(pos.x) === 1) ? piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.R && c !== centers.L) : piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.F && c !== centers.B);
+                         
+                         let turns = 0;
+                         while(pieceFrontColor !== frontColor) {
+                             await doMoves('D');
+                             this.state = this.getCubeState();
+                             piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             turns++;
+                             if(turns > 4) break;
+                         }
+                         
+                         // Insert the edge
+                         const rightSide = centers[target.sides[1]] === 'R';
+                         if(rightSide) {
+                             await doMoves("D' R' D R D F D' F'");
+                         } else {
+                             await doMoves("D L D' L' D' F' D F");
+                         }
+                         this.state = this.getCubeState();
+                         piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                    }
+                }
+                
+                // Phase 4: Yellow Cross
+                let isYellowCross = false;
+                while(!isYellowCross) {
+                    let yellowEdges = 0;
+                    if(findPiece(yellow, centers.F).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.B).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.L).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.R).pos.y === -1) yellowEdges++;
+                    if(yellowEdges === 4) { isYellowCross = true; break; }
+                    
+                    let pieceF = findPiece(yellow, centers.F);
+                    let pieceR = findPiece(yellow, centers.R);
+
+                    if (pieceF && pieceR) {
+                        await doMoves("F R U R' U' F'");
+                    } else if (findPiece(yellow, centers.F) && findPiece(yellow, centers.B)) {
+                        await doMoves("F R U R' U' F'");
+                        await doMoves("F R U R' U' F'");
+                    } else {
+                        await doMoves("F R U R' U' F'");
+                    }
+                }
+                
+                // Phase 5: Position Yellow Corners
+                for(let i=0; i<4; i++) {
+                    let countCorrect = 0;
+                    if(findPiece(centers.U, centers.F, centers.R).pos.x === 1 && findPiece(centers.U, centers.F, centers.R).pos.z === 1) countCorrect++;
+                    if(findPiece(centers.U, centers.F, centers.L).pos.x === -1 && findPiece(centers.U, centers.F, centers.L).pos.z === 1) countCorrect++;
+                    if(findPiece(centers.U, centers.B, centers.L).pos.x === -1 && findPiece(centers.U, centers.B, centers.L).pos.z === -1) countCorrect++;
+                    if(findPiece(centers.U, centers.B, centers.R).pos.x === 1 && findPiece(centers.U, centers.B, centers.R).pos.z === -1) countCorrect++;
+                    
+                    if (countCorrect === 4) break;
+                    
+                    await doMoves("R' F R B' R' F' R B");
+                }
+                
+                // Phase 6: Orient Yellow Corners
+                for(let i=0; i<4; i++) {
+                    let piece = findPiece(centers.U, centers.F, centers.R);
+                    if(piece.colors.includes(yellow)) {
+                        await doMoves("U");
+                    }
+                    if(findPiece(centers.U, centers.F, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.R).colors.includes(yellow)) break;
+                    
+                    await doMoves("R' D' R D R' D' R D");
+                }
+
+                // Phase 7: Position Yellow Edges
+                let isSolved = false;
+                for(let i=0; i<4; i++) {
+                    if (isSolved) break;
+                    let count = 0;
+                    if(findPiece(yellow, centers.F).pos.z === 1) count++;
+                    if(findPiece(yellow, centers.B).pos.z === -1) count++;
+                    if(findPiece(yellow, centers.L).pos.x === -1) count++;
+                    if(findPiece(yellow, centers.R).pos.x === 1) count++;
+                    if(count === 4) { isSolved = true; break; }
+                    
+                    await doMoves("R U R' U R U2 R'");
+                }
+
+                console.log("Solution found:", this.solutionMoves.join(' '));
+                return this.solutionMoves;
+            }
+        }
+
+
         // --- SCRAMBLE, RESET, SOLVE ---
         function resetCube() {
             if (isAnimating) return;
@@ -423,24 +692,35 @@
         async function scrambleCube() {
             if (isAnimating) return;
             isAnimating = true;
-            const moves = ['F', 'B', 'R', 'L', 'U', 'D'];
-            const modifiers = ['', "'", '2'];
-            for (let i = 0; i < 20; i++) {
-                const move = moves[Math.floor(Math.random() * moves.length)];
-                const mod = modifiers[Math.floor(Math.random() * modifiers.length)];
-                const fullMove = move + mod;
-                await performMove(fullMove);
+            const moves = ["R", "L", "U", "D", "F", "B", "R'", "L'", "U'", "D'", "F'", "B'", "R2", "L2", "U2", "D2", "F2", "B2"];
+            const scrambleLength = 25;
+            const scramble = [];
+            for (let i = 0; i < scrambleLength; i++) {
+                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                scramble.push(randomMove);
+            }
+            
+            console.log("Scrambling with moves:", scramble.join(' '));
+            for (const move of scramble) {
+                await performMove(move);
             }
             isAnimating = false;
         }
 
         async function solveCube() {
-            if (isAnimating) return;
+            if (isAnimating) {
+                console.log("Already solving.");
+                return;
+            }
             isAnimating = true;
 
-            const solutionMoves = solver.generateSolution();
+            const solver = new CubeSolver(performMove, getCubeState);
+            console.log("Starting solver...");
+            const solutionMoves = await solver.solve();
+            console.log("Solution complete.");
+            
             if (solutionMoves.length === 0) {
-                 console.log("Cube is already solved or solver placeholder is active.");
+                 console.log("Cube is already solved or solver could not find a solution.");
             } else {
                 for (const move of solutionMoves) {
                     await performMove(move);
@@ -449,17 +729,6 @@
             }
             isAnimating = false;
         }
-
-        // --- CUBE SOLVER (BEGINNER'S METHOD - PLACEHOLDER) ---
-        const solver = {
-            generateSolution: function() {
-                console.log("Solver started. NOTE: This is a placeholder solver.");
-                // A real solver would analyze the cube state here.
-                // For demonstration, we return a simple, well-known pattern.
-                const pattern = ["R", "U", "R'", "U'"];
-                return [...pattern, ...pattern, ...pattern, ...pattern];
-            }
-        };
 
         // --- RENDER & RESIZE ---
         function animate() {
