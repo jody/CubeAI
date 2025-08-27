@@ -314,7 +314,7 @@
             // Store original position and face colors
             cubelet.userData = { 
                 originalPosition: { x, y, z },
-                faceColors: faceColors
+                faceColors: faceColors // This is no longer used for rotation but can be kept for other purposes
             };
             
             cubeGroup.add(cubelet);
@@ -346,11 +346,57 @@
             
             animateRotation();
         }
-        
+
+        function updateCubeletLogicalPosition(cubelet, face) {
+            const pos = cubelet.userData.originalPosition;
+            let newPos = { ...pos };
+            
+            // This logic correctly calculates the new logical position (e.g., a piece at the top
+            // of the front face moves to the right side of the front face).
+            switch(face) {
+                case 'front':
+                    newPos = { x: Math.round(pos.y), y: Math.round(-pos.x), z: pos.z };
+                    break;
+                case 'back':
+                    newPos = { x: Math.round(-pos.y), y: Math.round(pos.x), z: pos.z };
+                    break;
+                case 'right':
+                    newPos = { x: pos.x, y: Math.round(pos.z), z: Math.round(-pos.y) };
+                    break;
+                case 'left':
+                    newPos = { x: pos.x, y: Math.round(-pos.z), z: Math.round(pos.y) };
+                    break;
+                case 'up':
+                    newPos = { x: Math.round(-pos.z), y: pos.y, z: Math.round(pos.x) };
+                    break;
+                case 'down':
+                    newPos = { x: Math.round(pos.z), y: pos.y, z: Math.round(-pos.x) };
+                    break;
+            }
+            
+            cubelet.userData.originalPosition = newPos;
+        }
+
         function rotateFace(face) {
             if (isAnimating) return;
             
             isAnimating = true;
+            
+            // Define the correct axis and angle for each standard cube move (e.g., F, U, R)
+            const rotationData = {
+                front: { axis: 'z', angle: -Math.PI / 2 },
+                back:  { axis: 'z', angle:  Math.PI / 2 },
+                right: { axis: 'x', angle: -Math.PI / 2 },
+                left:  { axis: 'x', angle:  Math.PI / 2 },
+                up:    { axis: 'y', angle: -Math.PI / 2 },
+                down:  { axis: 'y', angle:  Math.PI / 2 }
+            };
+            
+            const move = rotationData[face];
+            if (!move) {
+                isAnimating = false;
+                return;
+            }
             
             // Get cubelets for the specified face
             let faceGroup = new THREE.Group();
@@ -374,183 +420,47 @@
                 }
             });
             
-            // Create temporary group for rotation
+            // Move cubelets to a temporary group for rotation
             scene.add(faceGroup);
-            
-            // Move cubelets to face group
-            faceCubelets.forEach(cubelet => {
-                cubeGroup.remove(cubelet);
-                faceGroup.add(cubelet);
-            });
+            faceCubelets.forEach(cubelet => cubeGroup.remove(cubelet));
+            faceCubelets.forEach(cubelet => faceGroup.add(cubelet));
             
             // Animate rotation
-            const targetRotation = Math.PI / 2;
-            let axis = 'z';
-            
-            switch(face) {
-                case 'front': case 'back': axis = 'z'; break;
-                case 'right': case 'left': axis = 'x'; break;
-                case 'up': case 'down': axis = 'y'; break;
-            }
-            
-            if (face === 'back' || face === 'left' || face === 'down') {
-                faceGroup.rotation[axis] = -targetRotation;
-            } else {
-                faceGroup.rotation[axis] = targetRotation;
-            }
-            
             const duration = 300;
             const startTime = Date.now();
-            const startRotation = 0;
             
             function animateFaceRotation() {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 const eased = 0.5 - 0.5 * Math.cos(progress * Math.PI);
                 
-                if (face === 'back' || face === 'left' || face === 'down') {
-                    faceGroup.rotation[axis] = startRotation - targetRotation * eased;
-                } else {
-                    faceGroup.rotation[axis] = startRotation + targetRotation * eased;
-                }
+                faceGroup.rotation[move.axis] = move.angle * eased;
                 
                 if (progress < 1) {
                     requestAnimationFrame(animateFaceRotation);
                 } else {
-                    // Move cubelets back to main group
+                    // --- THIS IS THE KEY FIX ---
+                    // "Bake" the rotation into the cubelets' geometry
+                    faceGroup.updateMatrixWorld();
+                    
                     faceCubelets.forEach(cubelet => {
-                        faceGroup.remove(cubelet);
+                        // Apply the group's world matrix to the cubelet
+                        cubelet.applyMatrix4(faceGroup.matrixWorld);
+                        
+                        // Re-parent the cubelet to the main cube group
                         cubeGroup.add(cubelet);
                         
-                        // Update positions based on rotation
-                        updateCubeletPosition(cubelet, face);
+                        // Update the logical position for future move selections
+                        updateCubeletLogicalPosition(cubelet, face);
                     });
                     
+                    // Clean up the temporary group
                     scene.remove(faceGroup);
                     isAnimating = false;
                 }
             }
             
             animateFaceRotation();
-        }
-        
-        function updateCubeletPosition(cubelet, face) {
-            const pos = cubelet.userData.originalPosition;
-            let newPos = { ...pos };
-            
-            // Apply 90-degree rotation logic
-            switch(face) {
-                case 'front':
-                    newPos = { x: pos.y, y: -pos.x, z: pos.z };
-                    break;
-                case 'back':
-                    newPos = { x: -pos.y, y: pos.x, z: pos.z };
-                    break;
-                case 'right':
-                    newPos = { x: pos.x, y: pos.z, z: -pos.y };
-                    break;
-                case 'left':
-                    newPos = { x: pos.x, y: -pos.z, z: pos.y };
-                    break;
-                case 'up':
-                    newPos = { x: -pos.z, y: pos.y, z: pos.x };
-                    break;
-                case 'down':
-                    newPos = { x: pos.z, y: pos.y, z: -pos.x };
-                    break;
-            }
-            
-            cubelet.userData.originalPosition = newPos;
-            cubelet.position.set(newPos.x, newPos.y, newPos.z);
-            
-            // Rotate the face colors based on the face rotation
-            rotateCubeletColors(cubelet, face);
-        }
-        
-        function rotateCubeletColors(cubelet, face) {
-            const colors = cubelet.userData.faceColors;
-            let newColors = { ...colors };
-            
-            // Rotate colors based on which face was rotated
-            switch(face) {
-                case 'front': // Rotating around Z axis
-                    newColors = {
-                        ...colors,
-                        right: colors.bottom,
-                        top: colors.right,
-                        left: colors.top,
-                        bottom: colors.left,
-                        front: colors.front, // Front face doesn't change
-                        back: colors.back    // Back face doesn't change
-                    };
-                    break;
-                case 'back': // Rotating around -Z axis
-                    newColors = {
-                        ...colors,
-                        right: colors.top,
-                        top: colors.left,
-                        left: colors.bottom,
-                        bottom: colors.right,
-                        front: colors.front, // Front face doesn't change
-                        back: colors.back    // Back face doesn't change
-                    };
-                    break;
-                case 'right': // Rotating around X axis
-                    newColors = {
-                        ...colors,
-                        front: colors.bottom,
-                        top: colors.front,
-                        back: colors.top,
-                        bottom: colors.back,
-                        right: colors.right, // Right face doesn't change
-                        left: colors.left    // Left face doesn't change
-                    };
-                    break;
-                case 'left': // Rotating around -X axis
-                    newColors = {
-                        ...colors,
-                        front: colors.top,
-                        top: colors.back,
-                        back: colors.bottom,
-                        bottom: colors.front,
-                        right: colors.right, // Right face doesn't change
-                        left: colors.left    // Left face doesn't change
-                    };
-                    break;
-                case 'up': // Rotating around Y axis
-                    newColors = {
-                        ...colors,
-                        front: colors.right,
-                        left: colors.front,
-                        back: colors.left,
-                        right: colors.back,
-                        top: colors.top,     // Top face doesn't change
-                        bottom: colors.bottom // Bottom face doesn't change
-                    };
-                    break;
-                case 'down': // Rotating around -Y axis
-                    newColors = {
-                        ...colors,
-                        front: colors.left,
-                        right: colors.front,
-                        back: colors.right,
-                        left: colors.back,
-                        top: colors.top,     // Top face doesn't change
-                        bottom: colors.bottom // Bottom face doesn't change
-                    };
-                    break;
-            }
-            
-            // Update stored colors
-            cubelet.userData.faceColors = newColors;
-            
-            // Update the actual materials
-            cubelet.material[0].color.setHex(newColors.right);   // Right face (+X)
-            cubelet.material[1].color.setHex(newColors.left);    // Left face (-X)
-            cubelet.material[2].color.setHex(newColors.top);     // Top face (+Y)
-            cubelet.material[3].color.setHex(newColors.bottom);  // Bottom face (-Y)
-            cubelet.material[4].color.setHex(newColors.front);   // Front face (+Z)
-            cubelet.material[5].color.setHex(newColors.back);    // Back face (-Z)
         }
         
         function scrambleCube() {
@@ -587,7 +497,7 @@
                 moveIndex++;
                 
                 // Continue with next move after a short delay
-                setTimeout(executeNextMove, 200);
+                setTimeout(executeNextMove, 100); // Faster scramble
             }
             
             // Start executing moves
@@ -595,9 +505,21 @@
         }
         
         function rotateFaceInstant(face) {
+            // Define rotation data
+            const rotationData = {
+                front: { axis: 'z', angle: -Math.PI / 2 },
+                back:  { axis: 'z', angle:  Math.PI / 2 },
+                right: { axis: 'x', angle: -Math.PI / 2 },
+                left:  { axis: 'x', angle:  Math.PI / 2 },
+                up:    { axis: 'y', angle: -Math.PI / 2 },
+                down:  { axis: 'y', angle:  Math.PI / 2 }
+            };
+            
+            const move = rotationData[face];
+            if (!move) return;
+
             // Get cubelets for the specified face
             let faceCubelets = [];
-            
             cubelets.forEach(cubelet => {
                 const pos = cubelet.userData.originalPosition;
                 let shouldRotate = false;
@@ -616,9 +538,15 @@
                 }
             });
             
-            // Apply rotation logic to each cubelet
+            // Create a temporary group to generate the rotation matrix
+            const tempGroup = new THREE.Group();
+            tempGroup.rotation[move.axis] = move.angle;
+            tempGroup.updateMatrixWorld();
+
+            // Apply the transformation instantly
             faceCubelets.forEach(cubelet => {
-                updateCubeletPosition(cubelet, face);
+                cubelet.applyMatrix4(tempGroup.matrixWorld);
+                updateCubeletLogicalPosition(cubelet, face);
             });
         }
         
