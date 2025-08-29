@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Rubik's Cube</title>
+    <title>3D Rubik's Cube Solver</title>
     <style>
         body {
             margin: 0;
@@ -85,13 +85,13 @@
             backdrop-filter: blur(10px);
         }
         
-        #reset-btn, #scramble-btn {
+        #reset-btn, #scramble-btn, #solve-btn {
             background: linear-gradient(135deg, #48cae4, #0077b6);
             margin-top: 5px;
             width: 100%;
         }
         
-        #reset-btn:hover, #scramble-btn:hover {
+        #reset-btn:hover, #scramble-btn:hover, #solve-btn:hover {
             box-shadow: 0 5px 15px rgba(72, 202, 228, 0.4);
         }
         
@@ -100,7 +100,15 @@
         }
         
         #scramble-btn:hover {
-            box-shadow: 0 5px 15px rgba(247, 37, 133, 0.4);
+            box-shadow: 0 5-px 15px rgba(247, 37, 133, 0.4);
+        }
+
+        #solve-btn {
+            background: linear-gradient(135deg, #56ab2f, #a8e063);
+        }
+
+        #solve-btn:hover {
+            box-shadow: 0 5px 15px rgba(86, 171, 47, 0.4);
         }
 
         #loading {
@@ -144,35 +152,40 @@
             <div class="control-group">
                 <h3>FACE ROTATIONS</h3>
                 <div class="button-row">
-                    <button onclick="rotateFace('front')">F</button>
-                    <button onclick="rotateFace('back')">B</button>
-                    <button onclick="rotateFace('right')">R</button>
+                    <button onclick="handleFaceButtonClick('F')">F</button>
+                    <button onclick="handleFaceButtonClick('B')">B</button>
+                    <button onclick="handleFaceButtonClick('R')">R</button>
                 </div>
                 <div class="button-row">
-                    <button onclick="rotateFace('left')">L</button>
-                    <button onclick="rotateFace('up')">U</button>
-                    <button onclick="rotateFace('down')">D</button>
+                    <button onclick="handleFaceButtonClick('L')">L</button>
+                    <button onclick="handleFaceButtonClick('U')">U</button>
+                    <button onclick="handleFaceButtonClick('D')">D</button>
                 </div>
             </div>
             
             <button id="reset-btn" onclick="resetCube()">RESET CUBE</button>
             <button id="scramble-btn" onclick="scrambleCube()">SCRAMBLE</button>
+            <button id="solve-btn" onclick="solveCube()">SOLVE CUBE</button>
+
         </div>
         
         <div id="info" style="display: none;">
-            <strong>3D Rubik's Cube</strong><br>
-            Use the controls to rotate the entire cube or individual faces.<br>
-            <strong>Cube Rotation:</strong> View from different angles<br>
-            <strong>Face Rotation:</strong> Twist individual faces (F=Front, B=Back, R=Right, L=Left, U=Up, D=Down)
+            <strong>3D Rubik's Cube Solver</strong><br>
+            Use the controls to rotate the cube or individual faces.<br>
+            <strong>F, B, R, L, U, D:</strong> Standard clockwise face rotations.<br>
+            <strong>SCRAMBLE:</strong> Randomize the cube.<br>
+            <strong>SOLVE:</strong> Animate the solution for a scrambled cube.
         </div>
     </div>
-
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
     <script>
         let scene, camera, renderer, cubeGroup;
         let cubelets = [];
         let isAnimating = false;
         
-        // Rubik's cube colors
+        // --- CUBE CONSTANTS ---
         const colors = {
             front: 0x00ff00,   // Green
             back: 0x0000ff,    // Blue
@@ -181,102 +194,78 @@
             up: 0xffffff,      // White
             down: 0xffff00     // Yellow
         };
+        const faces = {
+            F: 'front', B: 'back', R: 'right', L: 'left', U: 'up', D: 'down'
+        };
+        const rotationData = {
+            front: { axis: 'z', angle: -Math.PI / 2 },
+            back:  { axis: 'z', angle:  Math.PI / 2 },
+            right: { axis: 'x', angle:  Math.PI / 2 },
+            left:  { axis: 'x', angle: -Math.PI / 2 },
+            up:    { axis: 'y', angle:  Math.PI / 2 },
+            down:  { axis: 'y', angle: -Math.PI / 2 }
+        };
+        const colorMap = {
+            [colors.up]: 'U', [colors.down]: 'D', 
+            [colors.front]: 'F', [colors.back]: 'B',
+            [colors.left]: 'L', [colors.right]: 'R',
+            0x1a1a1a: 'X' // Non-visible face
+        };
 
-        // Load Three.js dynamically with error handling
+        // --- INITIALIZATION ---
         function loadThreeJS() {
             return new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-                script.onload = () => {
-                    if (typeof THREE !== 'undefined') {
-                        console.log('Three.js loaded successfully');
-                        resolve();
-                    } else {
-                        reject(new Error('Three.js object not available'));
-                    }
-                };
+                script.onload = () => (typeof THREE !== 'undefined' ? resolve() : reject(new Error('Three.js failed to load')));
                 script.onerror = () => reject(new Error('Failed to load Three.js from CDN'));
                 document.head.appendChild(script);
             });
         }
-
+        
         async function initApp() {
             try {
                 document.getElementById('loading').textContent = 'Loading Three.js library...';
                 await loadThreeJS();
-                
                 document.getElementById('loading').textContent = 'Initializing 3D scene...';
-                await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for UI update
-                
                 init();
-                
-                // Show controls and info
                 document.getElementById('controls').style.display = 'block';
                 document.getElementById('info').style.display = 'block';
                 document.getElementById('loading').style.display = 'none';
-                
             } catch (error) {
                 console.error('Failed to initialize app:', error);
-                document.getElementById('loading').innerHTML = `
-                    <div style="color: #ff6b6b; text-align: center;">
-                        <h3>Failed to Load 3D Cube</h3>
-                        <p>Error: ${error.message}</p>
-                        <p>This might be due to:</p>
-                        <ul style="text-align: left; display: inline-block;">
-                            <li>Internet connection issues</li>
-                            <li>Browser WebGL support</li>
-                            <li>CDN accessibility</li>
-                        </ul>
-                        <button onclick="location.reload()" style="margin-top: 15px; padding: 10px 20px; background: #ff6b6b; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                            Try Again
-                        </button>
-                    </div>
-                `;
+                document.getElementById('loading').textContent = `Error: ${error.message}. Please refresh.`;
             }
         }
         
         function init() {
-            // Scene setup
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 0);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             document.getElementById('canvas-container').appendChild(renderer.domElement);
             
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
             scene.add(ambientLight);
-            
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
             directionalLight.position.set(10, 10, 5);
-            directionalLight.castShadow = true;
             scene.add(directionalLight);
             
-            // Create cube
             createCube();
-            
-            // Position camera
             camera.position.set(5, 5, 5);
             camera.lookAt(0, 0, 0);
-            
-            // Start render loop
             animate();
-            
-            console.log('Rubik\'s cube initialized successfully');
         }
         
         function createCube() {
             cubeGroup = new THREE.Group();
             scene.add(cubeGroup);
-            
             cubelets = [];
-            
             for (let x = -1; x <= 1; x++) {
                 for (let y = -1; y <= 1; y++) {
                     for (let z = -1; z <= 1; z++) {
+                        if (x === 0 && y === 0 && z === 0) continue;
                         createCubelet(x, y, z);
                     }
                 }
@@ -284,354 +273,464 @@
         }
         
         function createCubelet(x, y, z) {
-            const geometry = new THREE.BoxGeometry(0.9, 0.9, 0.9);
-            
-            // Store the original colors for each face based on initial position
+            const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95);
             const faceColors = {
-                right: x === 1 ? colors.right : 0x222222,   // +X face
-                left: x === -1 ? colors.left : 0x222222,    // -X face  
-                top: y === 1 ? colors.up : 0x222222,        // +Y face
-                bottom: y === -1 ? colors.down : 0x222222,  // -Y face
-                front: z === 1 ? colors.front : 0x222222,   // +Z face
-                back: z === -1 ? colors.back : 0x222222     // -Z face
+                right:  x === 1 ? colors.right : 0x1a1a1a,
+                left:   x === -1 ? colors.left : 0x1a1a1a,
+                up:     y === 1 ? colors.up : 0x1a1a1a,
+                down:   y === -1 ? colors.down : 0x1a1a1a,
+                front:  z === 1 ? colors.front : 0x1a1a1a,
+                back:   z === -1 ? colors.back : 0x1a1a1a
             };
-            
-            // Create materials for each face
             const materials = [
-                new THREE.MeshLambertMaterial({ color: faceColors.right }),   // Right face (+X)
-                new THREE.MeshLambertMaterial({ color: faceColors.left }),    // Left face (-X)
-                new THREE.MeshLambertMaterial({ color: faceColors.top }),     // Top face (+Y)
-                new THREE.MeshLambertMaterial({ color: faceColors.bottom }),  // Bottom face (-Y)
-                new THREE.MeshLambertMaterial({ color: faceColors.front }),   // Front face (+Z)
-                new THREE.MeshLambertMaterial({ color: faceColors.back })     // Back face (-Z)
+                new THREE.MeshLambertMaterial({ color: faceColors.right }),
+                new THREE.MeshLambertMaterial({ color: faceColors.left }),
+                new THREE.MeshLambertMaterial({ color: faceColors.up }),
+                new THREE.MeshLambertMaterial({ color: faceColors.down }),
+                new THREE.MeshLambertMaterial({ color: faceColors.front }),
+                new THREE.MeshLambertMaterial({ color: faceColors.back })
             ];
-            
             const cubelet = new THREE.Mesh(geometry, materials);
             cubelet.position.set(x, y, z);
-            cubelet.castShadow = true;
-            cubelet.receiveShadow = true;
-            
-            // Store original position and face colors
             cubelet.userData = { 
-                originalPosition: { x, y, z },
+                logicalPosition: new THREE.Vector3(x, y, z),
                 faceColors: faceColors
             };
-            
             cubeGroup.add(cubelet);
             cubelets.push(cubelet);
         }
-        
+
+        // --- CORE ROTATION LOGIC ---
+
         function rotateCube(axis, direction) {
             if (isAnimating) return;
-            
+
             isAnimating = true;
-            const targetRotation = direction * Math.PI / 2;
             const startRotation = cubeGroup.rotation[axis];
-            const duration = 500;
+            const targetRotation = startRotation + direction * Math.PI / 2;
+            const duration = 400;
             const startTime = Date.now();
-            
+
             function animateRotation() {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 const eased = 0.5 - 0.5 * Math.cos(progress * Math.PI);
-                
-                cubeGroup.rotation[axis] = startRotation + targetRotation * eased;
-                
+
+                cubeGroup.rotation[axis] = startRotation + (targetRotation - startRotation) * eased;
+
                 if (progress < 1) {
                     requestAnimationFrame(animateRotation);
                 } else {
+                    cubeGroup.rotation[axis] = targetRotation; // Snap to final angle
                     isAnimating = false;
                 }
             }
-            
             animateRotation();
         }
-        
-        function rotateFace(face) {
+
+        async function handleFaceButtonClick(move) {
             if (isAnimating) return;
+            await performMove(move);
+        }
+        
+        async function performMove(move) {
+            const faceName = faces[move.charAt(0)];
+            const isPrime = move.includes("'");
+            const isDouble = move.includes("2");
+            const turns = isDouble ? 2 : (isPrime ? 3 : 1);
             
-            isAnimating = true;
-            
-            // Get cubelets for the specified face
-            let faceGroup = new THREE.Group();
-            let faceCubelets = [];
-            
-            cubelets.forEach(cubelet => {
-                const pos = cubelet.userData.originalPosition;
-                let shouldRotate = false;
+            for (let i = 0; i < turns; i++) {
+                await rotateFace(faceName, 300);
+            }
+        }
+        
+        function rotateFace(face, duration = 300) {
+            return new Promise(resolve => {
+                const move = rotationData[face];
+                let faceGroup = new THREE.Group();
+                let faceCubelets = [];
+
+                cubelets.forEach(cubelet => {
+                    const pos = cubelet.userData.logicalPosition;
+                    let shouldRotate = false;
+                    switch(face) {
+                        case 'front': shouldRotate = pos.z > 0.5; break;
+                        case 'back':  shouldRotate = pos.z < -0.5; break;
+                        case 'right': shouldRotate = pos.x > 0.5; break;
+                        case 'left':  shouldRotate = pos.x < -0.5; break;
+                        case 'up':    shouldRotate = pos.y > 0.5; break;
+                        case 'down':  shouldRotate = pos.y < -0.5; break;
+                    }
+                    if (shouldRotate) faceCubelets.push(cubelet);
+                });
+
+                scene.add(faceGroup);
+                faceCubelets.forEach(c => cubeGroup.attach(c));
+                faceCubelets.forEach(c => faceGroup.attach(c));
                 
-                switch(face) {
-                    case 'front': shouldRotate = pos.z === 1; break;
-                    case 'back': shouldRotate = pos.z === -1; break;
-                    case 'right': shouldRotate = pos.x === 1; break;
-                    case 'left': shouldRotate = pos.x === -1; break;
-                    case 'up': shouldRotate = pos.y === 1; break;
-                    case 'down': shouldRotate = pos.y === -1; break;
+                const startTime = Date.now();
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const eased = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+                    faceGroup.rotation[move.axis] = move.angle * eased;
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        faceGroup.updateMatrixWorld();
+                        faceCubelets.forEach(c => {
+                            cubeGroup.attach(c);
+                            updateCubeletLogicalState(c, face);
+                        });
+                        scene.remove(faceGroup);
+                        resolve();
+                    }
                 }
-                
-                if (shouldRotate) {
-                    faceCubelets.push(cubelet);
-                }
+                animate();
             });
-            
-            // Create temporary group for rotation
-            scene.add(faceGroup);
-            
-            // Move cubelets to face group
-            faceCubelets.forEach(cubelet => {
-                cubeGroup.remove(cubelet);
-                faceGroup.add(cubelet);
-            });
-            
-            // Animate rotation
-            const targetRotation = Math.PI / 2;
-            let axis = 'z';
-            
+        }
+        
+        function updateCubeletLogicalState(cubelet, face) {
+            const pos = cubelet.userData.logicalPosition;
+            let newPos;
             switch(face) {
-                case 'front': case 'back': axis = 'z'; break;
-                case 'right': case 'left': axis = 'x'; break;
-                case 'up': case 'down': axis = 'y'; break;
+                case 'up':    newPos = { x: pos.z, y: pos.y, z: -pos.x }; break;
+                case 'down':  newPos = { x: -pos.z, y: pos.y, z: pos.x }; break;
+                case 'right': newPos = { x: pos.x, y: -pos.z, z: pos.y }; break;
+                case 'left':  newPos = { x: pos.x, y: pos.z, z: -pos.y }; break;
+                case 'front': newPos = { x: pos.y, y: -pos.x, z: pos.z }; break;
+                case 'back':  newPos = { x: -pos.y, y: pos.x, z: pos.z }; break;
             }
-            
-            if (face === 'back' || face === 'left' || face === 'down') {
-                faceGroup.rotation[axis] = -targetRotation;
-            } else {
-                faceGroup.rotation[axis] = targetRotation;
+            cubelet.userData.logicalPosition.set(Math.round(newPos.x), Math.round(newPos.y), Math.round(newPos.z));
+
+            const c = cubelet.userData.faceColors;
+            let n = { ...c };
+            switch(face) {
+                case 'up':    n = { ...c, front: c.left, left: c.back, back: c.right, right: c.front }; break;
+                case 'down':  n = { ...c, front: c.right, right: c.back, back: c.left, left: c.front }; break;
+                case 'right': n = { ...c, up: c.back, back: c.down, down: c.front, front: c.up }; break;
+                case 'left':  n = { ...c, up: c.front, front: c.down, down: c.back, back: c.up }; break;
+                case 'front': n = { ...c, up: c.right, right: c.down, down: c.left, left: c.up }; break;
+                case 'back':  n = { ...c, up: c.left, left: c.down, down: c.right, right: c.up }; break;
             }
-            
-            const duration = 300;
-            const startTime = Date.now();
-            const startRotation = 0;
-            
-            function animateFaceRotation() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const eased = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+            cubelet.userData.faceColors = n;
+        }
+
+        // --- CUBE STATE CONVERSION ---
+        function getCubeState() {
+            const state = {};
+            cubelets.forEach(cubelet => {
+                const pos = cubelet.userData.logicalPosition;
+                const stickers = cubelet.userData.faceColors;
+                const key = `(${pos.x},${pos.y},${pos.z})`;
                 
-                if (face === 'back' || face === 'left' || face === 'down') {
-                    faceGroup.rotation[axis] = startRotation - targetRotation * eased;
-                } else {
-                    faceGroup.rotation[axis] = startRotation + targetRotation * eased;
-                }
+                let facesWithStickers = Object.keys(stickers)
+                    .filter(face => stickers[face] !== 0x1a1a1a)
+                    .map(face => colorMap[stickers[face]]);
+
+                state[key] = {
+                    pos: { x: pos.x, y: pos.y, z: pos.z },
+                    colors: facesWithStickers
+                };
+            });
+            return state;
+        }
+
+        // --- CUBE SOLVER (BEGINNER'S METHOD) ---
+        class CubeSolver {
+            constructor(performMoveFn, cubeStateFn) {
+                this.performMove = performMoveFn;
+                this.getCubeState = cubeStateFn;
+                this.solutionMoves = [];
+                this.state = {};
+            }
+
+            async solve() {
+                this.solutionMoves = [];
+                this.state = this.getCubeState();
                 
-                if (progress < 1) {
-                    requestAnimationFrame(animateFaceRotation);
-                } else {
-                    // Move cubelets back to main group
-                    faceCubelets.forEach(cubelet => {
-                        faceGroup.remove(cubelet);
-                        cubeGroup.add(cubelet);
+                const centers = {
+                    'U': this.state['(0,1,0)'].colors[0],
+                    'D': this.state['(0,-1,0)'].colors[0],
+                    'F': this.state['(0,0,1)'].colors[0],
+                    'B': this.state['(0,0,-1)'].colors[0],
+                    'L': this.state['(-1,0,0)'].colors[0],
+                    'R': this.state['(1,0,0)'].colors[0],
+                };
+                const white = centers.U;
+                const yellow = centers.D;
+                
+                const findPiece = (c1, c2, c3 = null) => {
+                    const keys = Object.keys(this.state);
+                    for(const key of keys) {
+                        const piece = this.state[key];
+                        if (c3) {
+                            if(piece.colors.includes(c1) && piece.colors.includes(c2) && piece.colors.includes(c3)) return piece;
+                        } else {
+                            if(piece.colors.includes(c1) && piece.colors.includes(c2)) return piece;
+                        }
+                    }
+                    return null;
+                };
+                
+                const doMoves = async(moves) => {
+                    const moveArray = moves.split(' ');
+                    for(const move of moveArray) {
+                        if(move) {
+                            await this.performMove(move);
+                            this.solutionMoves.push(move);
+                            this.state = this.getCubeState();
+                        }
+                    }
+                };
+
+                // Phase 1: White Cross
+                const whiteEdges = [
+                    { x: 0, y: 1, z: 1, sideColor: 'F' }, // UF
+                    { x: 1, y: 1, z: 0, sideColor: 'R' }, // UR
+                    { x: 0, y: 1, z: -1, sideColor: 'B' },// UB
+                    { x: -1, y: 1, z: 0, sideColor: 'L' }  // UL
+                ];
+                
+                for(let i=0; i<whiteEdges.length; i++) {
+                    const target = whiteEdges[i];
+                    let piece = findPiece(white, centers[target.sideColor]);
+                    while(piece && !(piece.pos.y === 1 && piece.colors.includes(white))) {
+                        // Find piece and bring it to D layer
+                        let currentPos = piece.pos;
+                        if(currentPos.y === 1) { // On U face, but wrong orientation or position
+                           await doMoves('F2');
+                        } else if(currentPos.x === 0 && currentPos.z === 1) { // On F face
+                           if(piece.colors.includes(white)) await doMoves('F D');
+                           else await doMoves('F');
+                        } else if(currentPos.x === 1 && currentPos.z === 0) { // On R face
+                           if(piece.colors.includes(white)) await doMoves('R D');
+                           else await doMoves('R');
+                        } else if(currentPos.x === 0 && currentPos.z === -1) { // On B face
+                           if(piece.colors.includes(white)) await doMoves('B D');
+                           else await doMoves('B');
+                        } else if(currentPos.x === -1 && currentPos.z === 0) { // On L face
+                           if(piece.colors.includes(white)) await doMoves('L D');
+                           else await doMoves('L');
+                        }
                         
-                        // Update positions based on rotation
-                        updateCubeletPosition(cubelet, face);
-                    });
+                        // Piece is now on D face. Align and move up.
+                        piece = findPiece(white, centers[target.sideColor]);
+                        currentPos = piece.pos;
+                        let dTurns = 0;
+                        while( (currentPos.x !== target.x || currentPos.z !== target.z) || piece.colors.includes(white) ) {
+                            await doMoves('D');
+                            dTurns++;
+                            if (dTurns > 4) break;
+                            piece = findPiece(white, centers[target.sideColor]);
+                            currentPos = piece.pos;
+                        }
+                        await doMoves(target.sideColor + '2');
+                        this.state = this.getCubeState();
+                        piece = findPiece(white, centers[target.sideColor]);
+                    }
+                }
+                
+                // Phase 2: White Corners
+                const whiteCorners = [
+                    { x: 1, y: 1, z: 1, sides: ['F', 'R'] }, // UFR
+                    { x: -1, y: 1, z: 1, sides: ['F', 'L'] },// UFL
+                    { x: -1, y: 1, z: -1, sides: ['B', 'L'] },// UBL
+                    { x: 1, y: 1, z: -1, sides: ['B', 'R'] } // UBR
+                ];
+                
+                for(let i=0; i<whiteCorners.length; i++) {
+                    const target = whiteCorners[i];
+                    let piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                        // Position corner above its spot
+                        let pos = piece.pos;
+                        while(pos.y === 1 || !(pos.x === target.x && pos.z === target.z)) {
+                            await doMoves('D');
+                            this.state = this.getCubeState();
+                            piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                            pos = piece.pos;
+                        }
+                        
+                        // Insert corner using R U R' U'
+                        let counter = 0;
+                        while(! (piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z && piece.colors.includes(white)) ) {
+                           await doMoves('R U R\' U\'');
+                           this.state = this.getCubeState();
+                           piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                           counter++;
+                           if(counter > 10) break; // Safety break
+                        }
+                    }
+                }
+
+                // Phase 3: Middle Layer
+                const middleEdges = [
+                    { x: 1, y: 0, z: 1, sides: ['F', 'R'] },
+                    { x: -1, y: 0, z: 1, sides: ['F', 'L'] },
+                    { x: -1, y: 0, z: -1, sides: ['B', 'L'] },
+                    { x: 1, y: 0, z: -1, sides: ['B', 'R'] },
+                ];
+
+                for(let i=0; i<middleEdges.length; i++) {
+                    const target = middleEdges[i];
+                    let piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+
+                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                         // Find a piece not on the bottom layer or already in place
+                         let pos = piece.pos;
+                         if(pos.y !== -1) {
+                             if(pos.x === 1 && pos.z === 1) await doMoves("R U' R' U'");
+                             else if (pos.x === -1 && pos.z === 1) await doMoves("L' U L U");
+                             else if (pos.x === -1 && pos.z === -1) await doMoves("L' U' L U");
+                             else if (pos.x === 1 && pos.z === -1) await doMoves("R U R' U'");
+                             this.state = this.getCubeState();
+                             piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             pos = piece.pos;
+                         }
+
+                         // Align the piece with its front face
+                         const frontColor = centers[target.sides[0]];
+                         const pieceFrontColor = (Math.abs(pos.x) === 1) ? piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.R && c !== centers.L) : piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.F && c !== centers.B);
+                         
+                         let turns = 0;
+                         while(pieceFrontColor !== frontColor) {
+                             await doMoves('D');
+                             this.state = this.getCubeState();
+                             piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             turns++;
+                             if(turns > 4) break;
+                         }
+                         
+                         // Insert the edge
+                         const rightSide = centers[target.sides[1]] === 'R';
+                         if(rightSide) {
+                             await doMoves("D' R' D R D F D' F'");
+                         } else {
+                             await doMoves("D L D' L' D' F' D F");
+                         }
+                         this.state = this.getCubeState();
+                         piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                    }
+                }
+                
+                // Phase 4: Yellow Cross
+                let isYellowCross = false;
+                while(!isYellowCross) {
+                    let yellowEdges = 0;
+                    if(findPiece(yellow, centers.F).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.B).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.L).pos.y === -1) yellowEdges++;
+                    if(findPiece(yellow, centers.R).pos.y === -1) yellowEdges++;
+                    if(yellowEdges === 4) { isYellowCross = true; break; }
                     
-                    scene.remove(faceGroup);
-                    isAnimating = false;
-                }
-            }
-            
-            animateFaceRotation();
-        }
-        
-        function updateCubeletPosition(cubelet, face) {
-            const pos = cubelet.userData.originalPosition;
-            let newPos = { ...pos };
-            
-            // Apply 90-degree rotation logic
-            switch(face) {
-                case 'front':
-                    newPos = { x: pos.y, y: -pos.x, z: pos.z };
-                    break;
-                case 'back':
-                    newPos = { x: -pos.y, y: pos.x, z: pos.z };
-                    break;
-                case 'right':
-                    newPos = { x: pos.x, y: pos.z, z: -pos.y };
-                    break;
-                case 'left':
-                    newPos = { x: pos.x, y: -pos.z, z: pos.y };
-                    break;
-                case 'up':
-                    newPos = { x: -pos.z, y: pos.y, z: pos.x };
-                    break;
-                case 'down':
-                    newPos = { x: pos.z, y: pos.y, z: -pos.x };
-                    break;
-            }
-            
-            cubelet.userData.originalPosition = newPos;
-            cubelet.position.set(newPos.x, newPos.y, newPos.z);
-            
-            // Rotate the face colors based on the face rotation
-            rotateCubeletColors(cubelet, face);
-        }
-        
-        function rotateCubeletColors(cubelet, face) {
-            const colors = cubelet.userData.faceColors;
-            let newColors = { ...colors };
-            
-            // Rotate colors based on which face was rotated
-            switch(face) {
-                case 'front': // Rotating around Z axis
-                    newColors = {
-                        ...colors,
-                        right: colors.bottom,
-                        top: colors.right,
-                        left: colors.top,
-                        bottom: colors.left,
-                        front: colors.front, // Front face doesn't change
-                        back: colors.back    // Back face doesn't change
-                    };
-                    break;
-                case 'back': // Rotating around -Z axis
-                    newColors = {
-                        ...colors,
-                        right: colors.top,
-                        top: colors.left,
-                        left: colors.bottom,
-                        bottom: colors.right,
-                        front: colors.front, // Front face doesn't change
-                        back: colors.back    // Back face doesn't change
-                    };
-                    break;
-                case 'right': // Rotating around X axis
-                    newColors = {
-                        ...colors,
-                        front: colors.bottom,
-                        top: colors.front,
-                        back: colors.top,
-                        bottom: colors.back,
-                        right: colors.right, // Right face doesn't change
-                        left: colors.left    // Left face doesn't change
-                    };
-                    break;
-                case 'left': // Rotating around -X axis
-                    newColors = {
-                        ...colors,
-                        front: colors.top,
-                        top: colors.back,
-                        back: colors.bottom,
-                        bottom: colors.front,
-                        right: colors.right, // Right face doesn't change
-                        left: colors.left    // Left face doesn't change
-                    };
-                    break;
-                case 'up': // Rotating around Y axis
-                    newColors = {
-                        ...colors,
-                        front: colors.right,
-                        left: colors.front,
-                        back: colors.left,
-                        right: colors.back,
-                        top: colors.top,     // Top face doesn't change
-                        bottom: colors.bottom // Bottom face doesn't change
-                    };
-                    break;
-                case 'down': // Rotating around -Y axis
-                    newColors = {
-                        ...colors,
-                        front: colors.left,
-                        right: colors.front,
-                        back: colors.right,
-                        left: colors.back,
-                        top: colors.top,     // Top face doesn't change
-                        bottom: colors.bottom // Bottom face doesn't change
-                    };
-                    break;
-            }
-            
-            // Update stored colors
-            cubelet.userData.faceColors = newColors;
-            
-            // Update the actual materials
-            cubelet.material[0].color.setHex(newColors.right);   // Right face (+X)
-            cubelet.material[1].color.setHex(newColors.left);    // Left face (-X)
-            cubelet.material[2].color.setHex(newColors.top);     // Top face (+Y)
-            cubelet.material[3].color.setHex(newColors.bottom);  // Bottom face (-Y)
-            cubelet.material[4].color.setHex(newColors.front);   // Front face (+Z)
-            cubelet.material[5].color.setHex(newColors.back);    // Back face (-Z)
-        }
-        
-        function scrambleCube() {
-            if (isAnimating) return;
-            
-            // Define all possible moves
-            const moves = ['front', 'back', 'right', 'left', 'up', 'down'];
-            
-            // Generate 15-25 random moves for a good scramble
-            const numMoves = 15 + Math.floor(Math.random() * 11);
-            const scrambleMoves = [];
-            
-            // Generate random moves, avoiding consecutive identical moves
-            let lastMove = null;
-            for (let i = 0; i < numMoves; i++) {
-                let move;
-                do {
-                    move = moves[Math.floor(Math.random() * moves.length)];
-                } while (move === lastMove);
-                
-                scrambleMoves.push(move);
-                lastMove = move;
-            }
-            
-            // Execute moves with delays for visual effect
-            let moveIndex = 0;
-            
-            function executeNextMove() {
-                if (moveIndex >= scrambleMoves.length) {
-                    return; // Scramble complete
+                    let pieceF = findPiece(yellow, centers.F);
+                    let pieceR = findPiece(yellow, centers.R);
+
+                    if (pieceF && pieceR) {
+                        await doMoves("F R U R' U' F'");
+                    } else if (findPiece(yellow, centers.F) && findPiece(yellow, centers.B)) {
+                        await doMoves("F R U R' U' F'");
+                        await doMoves("F R U R' U' F'");
+                    } else {
+                        await doMoves("F R U R' U' F'");
+                    }
                 }
                 
-                rotateFaceInstant(scrambleMoves[moveIndex]);
-                moveIndex++;
+                // Phase 5: Position Yellow Corners
+                for(let i=0; i<4; i++) {
+                    let countCorrect = 0;
+                    if(findPiece(centers.U, centers.F, centers.R).pos.x === 1 && findPiece(centers.U, centers.F, centers.R).pos.z === 1) countCorrect++;
+                    if(findPiece(centers.U, centers.F, centers.L).pos.x === -1 && findPiece(centers.U, centers.F, centers.L).pos.z === 1) countCorrect++;
+                    if(findPiece(centers.U, centers.B, centers.L).pos.x === -1 && findPiece(centers.U, centers.B, centers.L).pos.z === -1) countCorrect++;
+                    if(findPiece(centers.U, centers.B, centers.R).pos.x === 1 && findPiece(centers.U, centers.B, centers.R).pos.z === -1) countCorrect++;
+                    
+                    if (countCorrect === 4) break;
+                    
+                    await doMoves("R' F R B' R' F' R B");
+                }
                 
-                // Continue with next move after a short delay
-                setTimeout(executeNextMove, 200);
+                // Phase 6: Orient Yellow Corners
+                for(let i=0; i<4; i++) {
+                    let piece = findPiece(centers.U, centers.F, centers.R);
+                    if(piece.colors.includes(yellow)) {
+                        await doMoves("U");
+                    }
+                    if(findPiece(centers.U, centers.F, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.R).colors.includes(yellow)) break;
+                    
+                    await doMoves("R' D' R D R' D' R D");
+                }
+
+                // Phase 7: Position Yellow Edges
+                let isSolved = false;
+                for(let i=0; i<4; i++) {
+                    if (isSolved) break;
+                    let count = 0;
+                    if(findPiece(yellow, centers.F).pos.z === 1) count++;
+                    if(findPiece(yellow, centers.B).pos.z === -1) count++;
+                    if(findPiece(yellow, centers.L).pos.x === -1) count++;
+                    if(findPiece(yellow, centers.R).pos.x === 1) count++;
+                    if(count === 4) { isSolved = true; break; }
+                    
+                    await doMoves("R U R' U R U2 R'");
+                }
+
+                console.log("Solution found:", this.solutionMoves.join(' '));
+                return this.solutionMoves;
             }
-            
-            // Start executing moves
-            executeNextMove();
         }
-        
-        function rotateFaceInstant(face) {
-            // Get cubelets for the specified face
-            let faceCubelets = [];
-            
-            cubelets.forEach(cubelet => {
-                const pos = cubelet.userData.originalPosition;
-                let shouldRotate = false;
-                
-                switch(face) {
-                    case 'front': shouldRotate = pos.z === 1; break;
-                    case 'back': shouldRotate = pos.z === -1; break;
-                    case 'right': shouldRotate = pos.x === 1; break;
-                    case 'left': shouldRotate = pos.x === -1; break;
-                    case 'up': shouldRotate = pos.y === 1; break;
-                    case 'down': shouldRotate = pos.y === -1; break;
-                }
-                
-                if (shouldRotate) {
-                    faceCubelets.push(cubelet);
-                }
-            });
-            
-            // Apply rotation logic to each cubelet
-            faceCubelets.forEach(cubelet => {
-                updateCubeletPosition(cubelet, face);
-            });
-        }
-        
+
+
+        // --- SCRAMBLE, RESET, SOLVE ---
         function resetCube() {
             if (isAnimating) return;
-            
-            // Remove current cube
             scene.remove(cubeGroup);
-            
-            // Create new cube
             createCube();
         }
-        
+
+        async function scrambleCube() {
+            if (isAnimating) return;
+            isAnimating = true;
+            const moves = ["R", "L", "U", "D", "F", "B", "R'", "L'", "U'", "D'", "F'", "B'", "R2", "L2", "U2", "D2", "F2", "B2"];
+            const scrambleLength = 25;
+            const scramble = [];
+            for (let i = 0; i < scrambleLength; i++) {
+                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                scramble.push(randomMove);
+            }
+            
+            console.log("Scrambling with moves:", scramble.join(' '));
+            for (const move of scramble) {
+                await performMove(move);
+            }
+            isAnimating = false;
+        }
+
+        async function solveCube() {
+            if (isAnimating) {
+                console.log("Already solving.");
+                return;
+            }
+            isAnimating = true;
+
+            const solver = new CubeSolver(performMove, getCubeState);
+            console.log("Starting solver...");
+            const solutionMoves = await solver.solve();
+            console.log("Solution complete.");
+            
+            if (solutionMoves.length === 0) {
+                 console.log("Cube is already solved or solver could not find a solution.");
+            } else {
+                for (const move of solutionMoves) {
+                    await performMove(move);
+                    await new Promise(res => setTimeout(res, 50));
+                }
+            }
+            isAnimating = false;
+        }
+
+        // --- RENDER & RESIZE ---
         function animate() {
             requestAnimationFrame(animate);
             renderer.render(scene, camera);
@@ -644,8 +743,6 @@
         }
         
         window.addEventListener('resize', handleResize);
-        
-        // Initialize the app when page loads
         window.addEventListener('DOMContentLoaded', initApp);
     </script>
 </body>
