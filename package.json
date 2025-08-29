@@ -1,0 +1,27 @@
+{
+  "name": "cubeai",
+  "version": "1.0.0",
+  "description": "An interactive Rubik's cube simulator as a SPA",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jody/CubeAI.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jody/CubeAI/issues"
+  },
+  "homepage": "https://github.com/jody/CubeAI#readme",
+  "devDependencies": {
+    "jest": "^30.1.1"
+  },
+  "scripts": {
+    "test": "jest"
+  }
+}
