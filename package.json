@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "An interactive Rubik's cube simulator as a SPA",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jody/CubeAI.git"
@@ -22,6 +19,9 @@
     "jest": "^30.1.1"
   },
   "scripts": {
-    "test": "jest"
+    "test": "jest --no-watchman",
+    "test:watch": "jest --watch --no-watchman",
+    "serve": "node scripts/serve.js",
+    "start": "node scripts/serve.js"
   }
 }
