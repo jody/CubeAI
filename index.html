@@ -627,10 +627,13 @@
                     
                     let pieceF = findPiece(yellow, centers.F);
                     let pieceR = findPiece(yellow, centers.R);
+		    let pieceB = findPiece(yellow, centers.B);
+		    let pieceL = findPiece(yellow, centers.L);
 
-                    if (pieceF && pieceR) {
+                    if (pieceF.pos.y === -1 && pieceR.pos.y === -1) {
                         await doMoves("F R U R' U' F'");
-                    } else if (findPiece(yellow, centers.F) && findPiece(yellow, centers.B)) {
+                    } else if ((pieceF.pos.y === -1 && pieceB.pos.y === -1) ||
+                               (pieceR.pos.y === -1 && pieceL.pos.y === -1)) {
                         await doMoves("F R U R' U' F'");
                         await doMoves("F R U R' U' F'");
                     } else {
