@@ -442,18 +442,25 @@
         // --- CUBE STATE CONVERSION ---
         function getCubeState() {
             const state = {};
+            const faceLetter = { up: 'U', down: 'D', front: 'F', back: 'B', left: 'L', right: 'R' };
             cubelets.forEach(cubelet => {
                 const pos = cubelet.userData.logicalPosition;
                 const stickers = cubelet.userData.faceColors;
                 const key = `(${pos.x},${pos.y},${pos.z})`;
-                
-                let facesWithStickers = Object.keys(stickers)
-                    .filter(face => stickers[face] !== 0x1a1a1a)
-                    .map(face => colorMap[stickers[face]]);
+
+                // Visible faces and their color letters
+                const visible = Object.keys(stickers)
+                  .filter(face => stickers[face] !== 0x1a1a1a);
+                const colorsArr = visible.map(face => colorMap[stickers[face]]);
+                const stickerMap = {};
+                visible.forEach(face => {
+                  stickerMap[faceLetter[face]] = colorMap[stickers[face]];
+                });
 
                 state[key] = {
                     pos: { x: pos.x, y: pos.y, z: pos.z },
-                    colors: facesWithStickers
+                    colors: colorsArr,
+                    stickers: stickerMap // e.g., { U: 'W', F: 'G' } depending on scheme
                 };
             });
             return state;
@@ -498,15 +505,45 @@
                 };
                 const white = centers.U;
                 const yellow = centers.D;
+
+                const cubeSolved = () => {
+                    // All stickers on a physical face must match that face's center color
+                    const stateNow = this.getCubeState();
+                    const faceKeys = ['U','D','F','B','L','R'];
+                    for (const key of Object.keys(stateNow)) {
+                        const p = stateNow[key];
+                        if (!p || !p.stickers) continue;
+                        for (const f of Object.keys(p.stickers)) {
+                            const color = p.stickers[f];
+                            if (centers[f] && color !== centers[f]) return false;
+                        }
+                    }
+                    return true;
+                };
+
+                // Early exit for already-solved cubes
+                if (cubeSolved()) {
+                    this.updateStatus('Already solved');
+                    return [];
+                }
                 
                 const findPiece = (c1, c2, c3 = null) => {
                     const keys = Object.keys(this.state);
-                    for(const key of keys) {
+                    for (const key of keys) {
                         const piece = this.state[key];
+                        if (!piece || !piece.colors) continue;
                         if (c3) {
-                            if(piece.colors.includes(c1) && piece.colors.includes(c2) && piece.colors.includes(c3)) return piece;
+                            // Corner: must match exactly 3 stickers
+                            if (piece.colors.length !== 3) continue;
+                            if (piece.colors.includes(c1) && piece.colors.includes(c2) && piece.colors.includes(c3)) {
+                                return piece;
+                            }
                         } else {
-                            if(piece.colors.includes(c1) && piece.colors.includes(c2)) return piece;
+                            // Edge: must match exactly 2 stickers
+                            if (piece.colors.length !== 2) continue;
+                            if (piece.colors.includes(c1) && piece.colors.includes(c2)) {
+                                return piece;
+                            }
                         }
                     }
                     return null;
@@ -532,49 +569,77 @@
                     { x: -1, y: 1, z: 0, sideColor: 'L' }  // UL
                 ];
                 
-                for(let i=0; i<whiteEdges.length; i++) {
+                const uFaceFromPos = (pos) => {
+                    if (pos.z === 1) return 'F';
+                    if (pos.z === -1) return 'B';
+                    if (pos.x === 1) return 'R';
+                    if (pos.x === -1) return 'L';
+                    return null;
+                };
+
+                for (let i = 0; i < whiteEdges.length; i++) {
                     const target = whiteEdges[i];
                     let piece = findPiece(white, centers[target.sideColor]);
-                    while(piece && (piece.pos.y !== 1 || piece.pos.x !== target.x || piece.pos.z !== target.z)) {
-                        // Find piece and bring it to D layer
-                        let currentPos = piece.pos;
-                        if(currentPos.y === 1) { // On U face, align then move down
-                            let uTurns = 0;
-                            while((piece.pos.x !== target.x || piece.pos.z !== target.z) && uTurns < 4) {
+                    let safety = 0;
+                    while (piece) {
+                        const s = piece.stickers || {};
+                        const whiteOn = Object.keys(s).find(k => s[k] === white) || null;
+                        // Done for this edge when it's on U with white facing up; alignment handled after all edges are up
+                        if (piece.pos.y === 1 && whiteOn === 'U') break;
+
+                        if (++safety > 100) { await doMoves('U'); safety = 0; }
+
+                        // Step 1: Ensure piece is on D with white facing D
+                        if (!(piece.pos.y === -1 && whiteOn === 'D')) {
+                            if (piece.pos.y === 1 && whiteOn === 'U') {
+                                // Align over target on U and keep it there (no S2 here)
+                                let turns = 0;
+                                while ((piece.pos.x !== target.x || piece.pos.z !== target.z) && turns < 4) {
+                                    await doMoves('U');
+                                    piece = findPiece(white, centers[target.sideColor]);
+                                    turns++;
+                                }
+                                // Once aligned, next loop iteration will break via the condition
+                            } else if (whiteOn && ['F','B','L','R'].includes(whiteOn)) {
+                                // Prefer a conjugated twist when targeting the same side to avoid endless spins (e.g., UL case)
+                                if (whiteOn === target.sideColor) {
+                                    await doMoves('U ' + whiteOn + " U'");
+                                } else {
+                                    await doMoves(whiteOn);
+                                }
+                            } else if (piece.pos.y === -1 && whiteOn !== 'D') {
+                                await doMoves(target.sideColor + ' D ' + target.sideColor + "'");
+                            } else {
                                 await doMoves('U');
-                                piece = findPiece(white, centers[target.sideColor]);
-                                uTurns++;
                             }
-                            await doMoves(target.sideColor + '2');
-                        } else if(currentPos.x === 0 && currentPos.z === 1) { // On F face
-                           if(piece.colors.includes(white)) await doMoves('F D');
-                           else await doMoves('F');
-                        } else if(currentPos.x === 1 && currentPos.z === 0) { // On R face
-                           if(piece.colors.includes(white)) await doMoves('R D');
-                           else await doMoves('R');
-                        } else if(currentPos.x === 0 && currentPos.z === -1) { // On B face
-                           if(piece.colors.includes(white)) await doMoves('B D');
-                           else await doMoves('B');
-                        } else if(currentPos.x === -1 && currentPos.z === 0) { // On L face
-                           if(piece.colors.includes(white)) await doMoves('L D');
-                           else await doMoves('L');
+                            piece = findPiece(white, centers[target.sideColor]);
+                            continue;
                         }
 
-                        // Piece is now on D face. Align and move up.
-                        piece = findPiece(white, centers[target.sideColor]);
-                        currentPos = piece.pos;
+                        // Step 2: On D with white down: align under target and lift with S2
                         let dTurns = 0;
-                        while(currentPos.x !== target.x || currentPos.z !== target.z) {
+                        while ((piece.pos.x !== target.x || piece.pos.z !== target.z) && dTurns < 4) {
                             await doMoves('D');
-                            dTurns++;
-                            if (dTurns > 4) break;
                             piece = findPiece(white, centers[target.sideColor]);
-                            currentPos = piece.pos;
+                            dTurns++;
                         }
                         await doMoves(target.sideColor + '2');
-                        this.state = this.getCubeState();
                         piece = findPiece(white, centers[target.sideColor]);
                     }
+                }
+                // After all four edges have white on U, align them to their side centers using U turns only
+                let alignSafety = 0;
+                const allWhiteEdgesAligned = () => {
+                    const checkEdge = (sideLetter) => {
+                        const p = findPiece(white, centers[sideLetter]);
+                        if (!p || p.pos.y !== 1) return false;
+                        const uSide = uFaceFromPos(p.pos);
+                        return uSide === sideLetter;
+                    };
+                    return checkEdge('F') && checkEdge('R') && checkEdge('B') && checkEdge('L');
+                };
+                while (!allWhiteEdgesAligned() && alignSafety++ < 8) {
+                    await doMoves('U');
                 }
 
                 // Phase 2: White Corners
