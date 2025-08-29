@@ -496,11 +496,17 @@
                 for(let i=0; i<whiteEdges.length; i++) {
                     const target = whiteEdges[i];
                     let piece = findPiece(white, centers[target.sideColor]);
-                    while(piece && !(piece.pos.y === 1 && piece.colors.includes(white))) {
+                    while(piece && (piece.pos.y !== 1 || piece.pos.x !== target.x || piece.pos.z !== target.z)) {
                         // Find piece and bring it to D layer
                         let currentPos = piece.pos;
-                        if(currentPos.y === 1) { // On U face, but wrong orientation or position
-                           await doMoves('F2');
+                        if(currentPos.y === 1) { // On U face, align then move down
+                            let uTurns = 0;
+                            while((piece.pos.x !== target.x || piece.pos.z !== target.z) && uTurns < 4) {
+                                await doMoves('U');
+                                piece = findPiece(white, centers[target.sideColor]);
+                                uTurns++;
+                            }
+                            await doMoves(target.sideColor + '2');
                         } else if(currentPos.x === 0 && currentPos.z === 1) { // On F face
                            if(piece.colors.includes(white)) await doMoves('F D');
                            else await doMoves('F');
@@ -514,12 +520,12 @@
                            if(piece.colors.includes(white)) await doMoves('L D');
                            else await doMoves('L');
                         }
-                        
+
                         // Piece is now on D face. Align and move up.
                         piece = findPiece(white, centers[target.sideColor]);
                         currentPos = piece.pos;
                         let dTurns = 0;
-                        while( (currentPos.x !== target.x || currentPos.z !== target.z) || piece.colors.includes(white) ) {
+                        while(currentPos.x !== target.x || currentPos.z !== target.z) {
                             await doMoves('D');
                             dTurns++;
                             if (dTurns > 4) break;
@@ -543,19 +549,22 @@
                 for(let i=0; i<whiteCorners.length; i++) {
                     const target = whiteCorners[i];
                     let piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
-                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                    while(piece && !(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
                         // Position corner above its spot
                         let pos = piece.pos;
-                        while(pos.y === 1 || !(pos.x === target.x && pos.z === target.z)) {
+                        while(piece && (pos.y === 1 || !(pos.x === target.x && pos.z === target.z))) {
                             await doMoves('D');
                             this.state = this.getCubeState();
                             piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
+                            if(!piece) break;
                             pos = piece.pos;
                         }
-                        
+
+                        if(!piece) break;
+
                         // Insert corner using R U R' U'
                         let counter = 0;
-                        while(! (piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z && piece.colors.includes(white)) ) {
+                        while(piece && !(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z && piece.colors.includes(white))) {
                            await doMoves('R U R\' U\'');
                            this.state = this.getCubeState();
                            piece = findPiece(white, centers[target.sides[0]], centers[target.sides[1]]);
@@ -577,7 +586,7 @@
                     const target = middleEdges[i];
                     let piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
 
-                    while(!(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
+                    while(piece && !(piece.pos.x === target.x && piece.pos.y === target.y && piece.pos.z === target.z)) {
                          // Find a piece not on the bottom layer or already in place
                          let pos = piece.pos;
                          if(pos.y !== -1) {
@@ -587,22 +596,28 @@
                              else if (pos.x === 1 && pos.z === -1) await doMoves("R U R' U'");
                              this.state = this.getCubeState();
                              piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             if(!piece) break;
                              pos = piece.pos;
                          }
 
+                         if(!piece) break;
+
                          // Align the piece with its front face
                          const frontColor = centers[target.sides[0]];
-                         const pieceFrontColor = (Math.abs(pos.x) === 1) ? piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.R && c !== centers.L) : piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.F && c !== centers.B);
-                         
                          let turns = 0;
-                         while(pieceFrontColor !== frontColor) {
+                         while(piece) {
+                             const pieceFrontColor = (Math.abs(pos.x) === 1) ? piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.R && c !== centers.L) : piece.colors.find(c => c !== centers.D && c !== centers.U && c !== centers.F && c !== centers.B);
+                             if(pieceFrontColor === frontColor || turns > 4) break;
                              await doMoves('D');
                              this.state = this.getCubeState();
                              piece = findPiece(centers[target.sides[0]], centers[target.sides[1]]);
+                             if(!piece) break;
+                             pos = piece.pos;
                              turns++;
-                             if(turns > 4) break;
                          }
-                         
+
+                         if(!piece) break;
+
                          // Insert the edge
                          const rightSide = centers[target.sides[1]] === 'R';
                          if(rightSide) {
@@ -619,46 +634,55 @@
                 let isYellowCross = false;
                 while(!isYellowCross) {
                     let yellowEdges = 0;
-                    if(findPiece(yellow, centers.F).pos.y === -1) yellowEdges++;
-                    if(findPiece(yellow, centers.B).pos.y === -1) yellowEdges++;
-                    if(findPiece(yellow, centers.L).pos.y === -1) yellowEdges++;
-                    if(findPiece(yellow, centers.R).pos.y === -1) yellowEdges++;
+                    const edgeF = findPiece(yellow, centers.F);
+                    const edgeB = findPiece(yellow, centers.B);
+                    const edgeL = findPiece(yellow, centers.L);
+                    const edgeR = findPiece(yellow, centers.R);
+                    if(edgeF && edgeF.pos.y === -1) yellowEdges++;
+                    if(edgeB && edgeB.pos.y === -1) yellowEdges++;
+                    if(edgeL && edgeL.pos.y === -1) yellowEdges++;
+                    if(edgeR && edgeR.pos.y === -1) yellowEdges++;
                     if(yellowEdges === 4) { isYellowCross = true; break; }
-                    
-                    let pieceF = findPiece(yellow, centers.F);
-                    let pieceR = findPiece(yellow, centers.R);
 
-                    if (pieceF && pieceR) {
+                    if (edgeF && edgeR && edgeF.pos.y === -1 && edgeR.pos.y === -1) {
                         await doMoves("F R U R' U' F'");
-                    } else if (findPiece(yellow, centers.F) && findPiece(yellow, centers.B)) {
+                    } else if ((edgeF && edgeB && edgeF.pos.y === -1 && edgeB.pos.y === -1) ||
+                               (edgeR && edgeL && edgeR.pos.y === -1 && edgeL.pos.y === -1)) {
                         await doMoves("F R U R' U' F'");
                         await doMoves("F R U R' U' F'");
                     } else {
                         await doMoves("F R U R' U' F'");
                     }
                 }
-                
+
                 // Phase 5: Position Yellow Corners
                 for(let i=0; i<4; i++) {
                     let countCorrect = 0;
-                    if(findPiece(centers.U, centers.F, centers.R).pos.x === 1 && findPiece(centers.U, centers.F, centers.R).pos.z === 1) countCorrect++;
-                    if(findPiece(centers.U, centers.F, centers.L).pos.x === -1 && findPiece(centers.U, centers.F, centers.L).pos.z === 1) countCorrect++;
-                    if(findPiece(centers.U, centers.B, centers.L).pos.x === -1 && findPiece(centers.U, centers.B, centers.L).pos.z === -1) countCorrect++;
-                    if(findPiece(centers.U, centers.B, centers.R).pos.x === 1 && findPiece(centers.U, centers.B, centers.R).pos.z === -1) countCorrect++;
-                    
+                    const ufr = findPiece(centers.U, centers.F, centers.R);
+                    const ufl = findPiece(centers.U, centers.F, centers.L);
+                    const ubl = findPiece(centers.U, centers.B, centers.L);
+                    const ubr = findPiece(centers.U, centers.B, centers.R);
+                    if(ufr && ufr.pos.x === 1 && ufr.pos.z === 1) countCorrect++;
+                    if(ufl && ufl.pos.x === -1 && ufl.pos.z === 1) countCorrect++;
+                    if(ubl && ubl.pos.x === -1 && ubl.pos.z === -1) countCorrect++;
+                    if(ubr && ubr.pos.x === 1 && ubr.pos.z === -1) countCorrect++;
+
                     if (countCorrect === 4) break;
-                    
+
                     await doMoves("R' F R B' R' F' R B");
                 }
-                
+
                 // Phase 6: Orient Yellow Corners
                 for(let i=0; i<4; i++) {
                     let piece = findPiece(centers.U, centers.F, centers.R);
-                    if(piece.colors.includes(yellow)) {
+                    if(piece && piece.colors.includes(yellow)) {
                         await doMoves("U");
                     }
-                    if(findPiece(centers.U, centers.F, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.L).colors.includes(yellow) && findPiece(centers.U, centers.B, centers.R).colors.includes(yellow)) break;
-                    
+                    const ufl = findPiece(centers.U, centers.F, centers.L);
+                    const ubl = findPiece(centers.U, centers.B, centers.L);
+                    const ubr = findPiece(centers.U, centers.B, centers.R);
+                    if(ufl && ubl && ubr && ufl.colors.includes(yellow) && ubl.colors.includes(yellow) && ubr.colors.includes(yellow)) break;
+
                     await doMoves("R' D' R D R' D' R D");
                 }
 
@@ -667,12 +691,16 @@
                 for(let i=0; i<4; i++) {
                     if (isSolved) break;
                     let count = 0;
-                    if(findPiece(yellow, centers.F).pos.z === 1) count++;
-                    if(findPiece(yellow, centers.B).pos.z === -1) count++;
-                    if(findPiece(yellow, centers.L).pos.x === -1) count++;
-                    if(findPiece(yellow, centers.R).pos.x === 1) count++;
+                    const edgeF2 = findPiece(yellow, centers.F);
+                    const edgeB2 = findPiece(yellow, centers.B);
+                    const edgeL2 = findPiece(yellow, centers.L);
+                    const edgeR2 = findPiece(yellow, centers.R);
+                    if(edgeF2 && edgeF2.pos.z === 1) count++;
+                    if(edgeB2 && edgeB2.pos.z === -1) count++;
+                    if(edgeL2 && edgeL2.pos.x === -1) count++;
+                    if(edgeR2 && edgeR2.pos.x === 1) count++;
                     if(count === 4) { isSolved = true; break; }
-                    
+
                     await doMoves("R U R' U R U2 R'");
                 }
 
@@ -714,20 +742,25 @@
             }
             isAnimating = true;
 
-            const solver = new CubeSolver(performMove, getCubeState);
-            console.log("Starting solver...");
-            const solutionMoves = await solver.solve();
-            console.log("Solution complete.");
-            
-            if (solutionMoves.length === 0) {
-                 console.log("Cube is already solved or solver could not find a solution.");
-            } else {
-                for (const move of solutionMoves) {
-                    await performMove(move);
-                    await new Promise(res => setTimeout(res, 50));
+            try {
+                const solver = new CubeSolver(performMove, getCubeState);
+                console.log("Starting solver...");
+                const solutionMoves = await solver.solve();
+                console.log("Solution complete.");
+
+                if (!solutionMoves || solutionMoves.length === 0) {
+                     console.log("Cube is already solved or solver could not find a solution.");
+                } else {
+                    for (const move of solutionMoves) {
+                        await performMove(move);
+                        await new Promise(res => setTimeout(res, 50));
+                    }
                 }
+            } catch (err) {
+                console.error("Solver error:", err);
+            } finally {
+                isAnimating = false;
             }
-            isAnimating = false;
         }
 
         // --- RENDER & RESIZE ---
