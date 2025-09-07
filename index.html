@@ -308,7 +308,7 @@
 
               const project = v => {
                 const d = 5; // camera distance
-                const scale = 200 / (v.z + d);
+                const scale = 200 / (d - v.z);
                 return { x: v.x * scale + w / 2, y: -v.y * scale + h / 2 };
               };
 
@@ -735,9 +735,8 @@
                     }
                 };
 
-                const findEdge = (c1, c2) => {
-                    return Object.values(this.state).find(p => p.colors && p.colors.length === 2 && p.colors.includes(c1) && p.colors.includes(c2));
-                };
+                const findEdge = (c1, c2) =>
+                    Object.values(this.state).find(p => p.colors && p.colors.length === 2 && p.colors.includes(c1) && p.colors.includes(c2));
 
                 const uFaceFromPos = pos => {
                     if (pos.z === 1) return 'F';
@@ -752,69 +751,55 @@
                     return Object.keys(s).find(k => s[k] === white) || null;
                 };
 
-                const opposite = f => ({ F: 'B', B: 'F', R: 'L', L: 'R', U: 'D', D: 'U' }[f]);
-
                 const edgeSolved = side => {
                     const p = findEdge(white, centers[side]);
                     return p && p.pos.y === 1 && whiteFace(p) === 'U' && uFaceFromPos(p.pos) === side;
                 };
 
-                const crossSolved = () => ['F', 'R', 'B', 'L'].every(edgeSolved);
-
-                const insertEdge = async side => {
-                    while (!edgeSolved(side)) {
-                        let piece = findEdge(white, centers[side]);
-                        let pos = piece.pos;
-                        let wf = whiteFace(piece);
-                        if (pos.y === 1) {
-                            let face = uFaceFromPos(pos);
-                            while (face !== side) {
-                                await move('U');
-                                piece = findEdge(white, centers[side]);
-                                pos = piece.pos;
-                                wf = whiteFace(piece);
-                                face = uFaceFromPos(pos);
-                            }
-                            if (wf === 'U') {
-                                await move(side + '2');
-                            } else {
-                                await move(side + ' U ' + side + "'");
-                            }
-                        } else if (pos.y === -1) {
-                            let face = uFaceFromPos(pos);
+                const moveToTop = async side => {
+                    let piece = findEdge(white, centers[side]);
+                    while (piece.pos.y !== 1 || whiteFace(piece) !== 'U') {
+                        if (piece.pos.y === -1) {
+                            let face = uFaceFromPos(piece.pos);
                             while (face !== side) {
                                 await move('D');
                                 piece = findEdge(white, centers[side]);
-                                pos = piece.pos;
-                                wf = whiteFace(piece);
-                                face = uFaceFromPos(pos);
+                                face = uFaceFromPos(piece.pos);
                             }
-                            if (wf === 'D') {
+                            if (whiteFace(piece) === 'D') {
                                 await move(side + '2');
                             } else {
                                 await move(side + ' D ' + side + "'");
                             }
-                        } else {
+                        } else if (piece.pos.y === 0) {
+                            const wf = whiteFace(piece);
                             await move(wf + ' D ' + wf + "'");
+                        } else {
+                            await move(side + ' U ' + side + "'");
                         }
+                        piece = findEdge(white, centers[side]);
+                    }
+                };
+
+                const alignAndInsert = async side => {
+                    let piece = findEdge(white, centers[side]);
+                    while (uFaceFromPos(piece.pos) !== side) {
+                        await move('U');
+                        piece = findEdge(white, centers[side]);
+                    }
+                    if (!edgeSolved(side)) {
+                        await move(side + '2');
                     }
                 };
 
                 for (const side of ['F', 'R', 'B', 'L']) {
-                    await insertEdge(side);
+                    await moveToTop(side);
+                    await alignAndInsert(side);
                 }
 
-                let tries = 0;
-                while (!crossSolved() && tries < 4) {
-                    await move('U');
-                    tries++;
-                }
-
-                const solved = crossSolved();
-                const message = solved ? 'White cross solved!' : 'White cross incomplete';
-                this.updateStatus(message);
+                const solved = ['F', 'R', 'B', 'L'].every(edgeSolved);
+                this.updateStatus(solved ? 'White cross solved!' : 'White cross incomplete');
                 if (solved) alert('White cross solved!');
-                console.log('White cross ' + (solved ? 'solved' : 'incomplete') + ':', this.solutionMoves.join(' '));
                 return this.solutionMoves;
             }
 
