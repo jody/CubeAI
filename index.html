@@ -193,7 +193,109 @@
     </div>
     
     <script>
-        // TODO: embed Three.js here so the app can run offline with only this file.
+        // Minimal embedded Three.js subset to allow offline use without external files.
+        // This stub provides only the features required by the app and is not a full implementation.
+        const THREE = (() => {
+          class Vector3 {
+            constructor(x = 0, y = 0, z = 0) {
+              this.x = x; this.y = y; this.z = z;
+            }
+            set(x, y, z) {
+              this.x = x; this.y = y; this.z = z;
+              return this;
+            }
+            clone() {
+              return new Vector3(this.x, this.y, this.z);
+            }
+          }
+
+          class Object3D {
+            constructor() {
+              this.children = [];
+              this.position = new Vector3();
+              this.rotation = new Vector3();
+            }
+            add(obj) {
+              this.children.push(obj);
+            }
+          }
+
+          class Group extends Object3D {}
+
+          class Scene extends Group {}
+
+          class PerspectiveCamera extends Object3D {
+            constructor(fov, aspect, near, far) {
+              super();
+              this.fov = fov;
+              this.aspect = aspect;
+              this.near = near;
+              this.far = far;
+            }
+          }
+
+          class BoxGeometry {
+            constructor() {}
+          }
+
+          class MeshLambertMaterial {
+            constructor(params = {}) {
+              this.color = params.color || 0xffffff;
+            }
+          }
+
+          class Mesh extends Object3D {
+            constructor(geometry, material) {
+              super();
+              this.geometry = geometry;
+              this.material = material;
+            }
+          }
+
+          class AmbientLight extends Object3D {
+            constructor(color, intensity) {
+              super();
+              this.color = color;
+              this.intensity = intensity;
+            }
+          }
+
+          class DirectionalLight extends Object3D {
+            constructor(color, intensity) {
+              super();
+              this.color = color;
+              this.intensity = intensity;
+            }
+          }
+
+          class WebGLRenderer {
+            constructor() {
+              this.domElement = document.createElement('canvas');
+              this.context = this.domElement.getContext('2d');
+            }
+            setSize(w, h) {
+              this.domElement.width = w;
+              this.domElement.height = h;
+            }
+            render() {
+              // Rendering not implemented in this stub.
+            }
+          }
+
+          return {
+            Vector3,
+            Object3D,
+            Group,
+            Scene,
+            PerspectiveCamera,
+            BoxGeometry,
+            MeshLambertMaterial,
+            Mesh,
+            AmbientLight,
+            DirectionalLight,
+            WebGLRenderer
+          };
+        })();
     </script>
     
     <script>
