@@ -218,6 +218,9 @@
             add(obj) {
               this.children.push(obj);
             }
+            lookAt() {
+              // noop in stub
+            }
           }
 
           class Group extends Object3D {}
@@ -579,13 +582,6 @@
                 this.solutionMoves = [];
                 this.state = this.getCubeState();
 
-                const phases = ['White Cross'];
-                const totalPhases = phases.length;
-                let currentPhase = 0;
-                const phaseStatus = () => this.updateStatus('Phase ' + (currentPhase + 1) + '/' + totalPhases + ': ' + phases[currentPhase] + ' (moves: ' + this.solutionMoves.length + ')');
-
-                phaseStatus();
-
                 const centers = {
                     U: this.state['(0,1,0)'].colors[0],
                     D: this.state['(0,-1,0)'].colors[0],
@@ -596,28 +592,27 @@
                 };
                 const white = centers.U;
 
-                const findPiece = (c1, c2) => {
+                const status = () => this.updateStatus('White Cross (moves: ' + this.solutionMoves.length + ')');
+                status();
+
+                const findEdge = (c1, c2) => {
                     const keys = Object.keys(this.state);
                     for (const key of keys) {
                         const piece = this.state[key];
                         if (!piece || !piece.colors) continue;
                         if (piece.colors.length !== 2) continue;
-                        if (piece.colors.includes(c1) && piece.colors.includes(c2)) {
-                            return piece;
-                        }
+                        if (piece.colors.includes(c1) && piece.colors.includes(c2)) return piece;
                     }
                     return null;
                 };
 
                 const doMoves = async moves => {
-                    const moveArray = moves.split(' ');
-                    for (const move of moveArray) {
-                        if (move) {
-                            await this.performMove(move);
-                            this.solutionMoves.push(move);
-                            this.state = this.getCubeState();
-                            phaseStatus();
-                        }
+                    for (const mv of moves.split(' ')) {
+                        if (!mv) continue;
+                        await this.performMove(mv);
+                        this.solutionMoves.push(mv);
+                        this.state = this.getCubeState();
+                        status();
                     }
                 };
 
@@ -637,7 +632,7 @@
                 const opposite = face => ({ F: 'B', B: 'F', R: 'L', L: 'R', U: 'D', D: 'U' }[face]);
 
                 const edgeSolved = side => {
-                    const p = findPiece(white, centers[side]);
+                    const p = findEdge(white, centers[side]);
                     return p && p.pos.y === 1 && uFaceFromPos(p.pos) === side && whiteFaceOf(p) === 'U';
                 };
 
@@ -645,7 +640,7 @@
 
                 const solveEdge = async side => {
                     while (!edgeSolved(side)) {
-                        const piece = findPiece(white, centers[side]);
+                        const piece = findEdge(white, centers[side]);
                         const whiteOn = whiteFaceOf(piece);
                         const pos = piece.pos;
 
@@ -680,10 +675,10 @@
                     await solveEdge(side);
                 }
 
-                let alignTurns = 0;
-                while (!crossSolved() && alignTurns < 4) {
+                let tries = 0;
+                while (!crossSolved() && tries < 4) {
                     await doMoves('U');
-                    alignTurns++;
+                    tries++;
                 }
 
                 const success = crossSolved();
