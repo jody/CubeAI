@@ -524,63 +524,50 @@
                     return Object.keys(s).find(k => s[k] === white) || null;
                 };
 
-                const crossSolved = () => {
-                    const check = side => {
-                        const p = findPiece(white, centers[side]);
-                        return p && p.pos.y === 1 && uFaceFromPos(p.pos) === side && whiteFaceOf(p) === 'U';
-                    };
-                    return ['F', 'R', 'B', 'L'].every(check);
+                const opposite = face => ({ F: 'B', B: 'F', R: 'L', L: 'R', U: 'D', D: 'U' }[face]);
+
+                const edgeSolved = side => {
+                    const p = findPiece(white, centers[side]);
+                    return p && p.pos.y === 1 && uFaceFromPos(p.pos) === side && whiteFaceOf(p) === 'U';
                 };
 
-                if (crossSolved()) {
-                    this.updateStatus('White cross already solved');
-                    return [];
-                }
+                const crossSolved = () => ['F', 'R', 'B', 'L'].every(edgeSolved);
 
-                const targets = [
-                    { side: 'F', x: 0, z: 1 },
-                    { side: 'R', x: 1, z: 0 },
-                    { side: 'B', x: 0, z: -1 },
-                    { side: 'L', x: -1, z: 0 }
-                ];
-
-                for (const t of targets) {
-                    let guard = 0;
-                    let piece = findPiece(white, centers[t.side]);
-                    while (piece && !(piece.pos.x === t.x && piece.pos.y === 1 && piece.pos.z === t.z && whiteFaceOf(piece) === 'U')) {
-                        guard++;
-                        if (guard > 100) {
-                            await doMoves('U');
-                            guard = 0;
-                        }
+                const solveEdge = async side => {
+                    while (!edgeSolved(side)) {
+                        const piece = findPiece(white, centers[side]);
                         const whiteOn = whiteFaceOf(piece);
                         const pos = piece.pos;
-                        if (pos.y === 1) {
-                            if (whiteOn !== 'U') {
-                                await doMoves(t.side);
-                            } else {
-                                await doMoves('U');
-                            }
+
+                        if (pos.y === 1 && whiteOn === 'U') {
+                            await doMoves('U');
+                        } else if (pos.y === 1) {
+                            await doMoves(side);
                         } else if (pos.y === -1) {
-                            if (whiteOn !== 'D') {
+                            const under = uFaceFromPos(pos);
+                            if (under !== side) {
                                 await doMoves('D');
+                            } else if (whiteOn === 'D') {
+                                await doMoves(side + '2');
                             } else {
-                                const under = uFaceFromPos(pos);
-                                if (under !== t.side) {
-                                    await doMoves('D');
-                                } else {
-                                    await doMoves(t.side + '2');
-                                }
+                                await doMoves(side);
                             }
                         } else {
-                            if (whiteOn) {
-                                await doMoves(whiteOn);
-                            } else {
+                            if (whiteOn === side) {
+                                await doMoves(side + ' U ' + side + "'");
+                            } else if (whiteOn === opposite(side)) {
+                                await doMoves(opposite(side) + ' U ' + opposite(side) + "'");
+                            } else if (whiteOn === 'U') {
                                 await doMoves('U');
+                            } else {
+                                await doMoves(whiteOn);
                             }
                         }
-                        piece = findPiece(white, centers[t.side]);
                     }
+                };
+
+                for (const side of ['F', 'R', 'B', 'L']) {
+                    await solveEdge(side);
                 }
 
                 let alignTurns = 0;
@@ -590,7 +577,9 @@
                 }
 
                 const success = crossSolved();
-                this.updateStatus(success ? 'White cross solved' : 'White cross incomplete');
+                const message = success ? 'White cross solved!' : 'White cross incomplete';
+                this.updateStatus(message);
+                if (success) alert('White cross solved!');
                 console.log('White cross ' + (success ? 'solved' : 'incomplete') + ':', this.solutionMoves.join(' '));
                 return this.solutionMoves;
             }
