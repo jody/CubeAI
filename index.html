@@ -287,7 +287,63 @@
               // noop in stub
             }
             render() {
-              // Rendering not implemented in this stub.
+              const ctx = this.context;
+              const w = this.domElement.width;
+              const h = this.domElement.height;
+              ctx.clearRect(0, 0, w, h);
+
+              const rotate = (v, r) => {
+                let { x, y, z } = v;
+                const cx = Math.cos(r.x), sx = Math.sin(r.x);
+                const cy = Math.cos(r.y), sy = Math.sin(r.y);
+                const cz = Math.cos(r.z), sz = Math.sin(r.z);
+                let y1 = y * cx - z * sx;
+                let z1 = y * sx + z * cx;
+                let x2 = x * cy + z1 * sy;
+                let z2 = -x * sy + z1 * cy;
+                let x3 = x2 * cz - y1 * sz;
+                let y3 = x2 * sz + y1 * cz;
+                return { x: x3, y: y3, z: z2 };
+              };
+
+              const project = v => {
+                const d = 5; // camera distance
+                const scale = 200 / (v.z + d);
+                return { x: v.x * scale + w / 2, y: -v.y * scale + h / 2 };
+              };
+
+              const facesToDraw = [];
+              cubelets.forEach(cubelet => {
+                const base = cubelet.userData.logicalPosition;
+                for (const face in cubelet.userData.faceColors) {
+                  const color = cubelet.userData.faceColors[face];
+                  if (color === 0x1a1a1a) continue;
+                  const normal = rotate(FACE_NORMALS[face], cubeGroup.rotation);
+                  if (normal.z <= 0) continue;
+                  const verts3d = FACE_VERTICES[face].map(v => rotate({
+                    x: v.x + base.x,
+                    y: v.y + base.y,
+                    z: v.z + base.z
+                  }, cubeGroup.rotation));
+                  const verts2d = verts3d.map(project);
+                  const depth = verts3d.reduce((s, v) => s + v.z, 0) / verts3d.length;
+                  facesToDraw.push({ verts: verts2d, color, depth });
+                }
+              });
+
+              facesToDraw.sort((a, b) => a.depth - b.depth);
+              facesToDraw.forEach(f => {
+                ctx.beginPath();
+                ctx.moveTo(f.verts[0].x, f.verts[0].y);
+                for (let i = 1; i < f.verts.length; i++) {
+                  ctx.lineTo(f.verts[i].x, f.verts[i].y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = '#' + f.color.toString(16).padStart(6, '0');
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+              });
             }
           }
 
@@ -338,6 +394,54 @@
             [colors.front]: 'F', [colors.back]: 'B',
             [colors.left]: 'L', [colors.right]: 'R',
             0x1a1a1a: 'X' // Non-visible face
+        };
+
+        const FACE_NORMALS = {
+            right:  { x: 1, y: 0, z: 0 },
+            left:   { x: -1, y: 0, z: 0 },
+            up:     { x: 0, y: 1, z: 0 },
+            down:   { x: 0, y: -1, z: 0 },
+            front:  { x: 0, y: 0, z: 1 },
+            back:   { x: 0, y: 0, z: -1 }
+        };
+
+        const FACE_VERTICES = {
+            right: [
+                { x: 0.5, y: -0.5, z: 0.5 },
+                { x: 0.5, y: -0.5, z: -0.5 },
+                { x: 0.5, y: 0.5, z: -0.5 },
+                { x: 0.5, y: 0.5, z: 0.5 }
+            ],
+            left: [
+                { x: -0.5, y: -0.5, z: -0.5 },
+                { x: -0.5, y: -0.5, z: 0.5 },
+                { x: -0.5, y: 0.5, z: 0.5 },
+                { x: -0.5, y: 0.5, z: -0.5 }
+            ],
+            up: [
+                { x: -0.5, y: 0.5, z: 0.5 },
+                { x: 0.5, y: 0.5, z: 0.5 },
+                { x: 0.5, y: 0.5, z: -0.5 },
+                { x: -0.5, y: 0.5, z: -0.5 }
+            ],
+            down: [
+                { x: -0.5, y: -0.5, z: -0.5 },
+                { x: 0.5, y: -0.5, z: -0.5 },
+                { x: 0.5, y: -0.5, z: 0.5 },
+                { x: -0.5, y: -0.5, z: 0.5 }
+            ],
+            front: [
+                { x: -0.5, y: -0.5, z: 0.5 },
+                { x: 0.5, y: -0.5, z: 0.5 },
+                { x: 0.5, y: 0.5, z: 0.5 },
+                { x: -0.5, y: 0.5, z: 0.5 }
+            ],
+            back: [
+                { x: 0.5, y: -0.5, z: -0.5 },
+                { x: -0.5, y: -0.5, z: -0.5 },
+                { x: -0.5, y: 0.5, z: -0.5 },
+                { x: 0.5, y: 0.5, z: -0.5 }
+            ]
         };
 
         // --- INITIALIZATION ---
