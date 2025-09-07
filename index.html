@@ -232,6 +232,9 @@
               this.near = near;
               this.far = far;
             }
+            updateProjectionMatrix() {
+              // noop in stub
+            }
           }
 
           class BoxGeometry {
@@ -276,6 +279,9 @@
             setSize(w, h) {
               this.domElement.width = w;
               this.domElement.height = h;
+            }
+            setClearColor() {
+              // noop in stub
             }
             render() {
               // Rendering not implemented in this stub.
@@ -567,6 +573,8 @@
                 this.updateStatus = statusCallback || (() => {});
                 this.solutionMoves = [];
                 this.state = {};
+            }
+
             async solve() {
                 this.solutionMoves = [];
                 this.state = this.getCubeState();
