@@ -2,9 +2,7 @@
 
 ## Project Structure & Module Organization
 - Root SPA: `index.html` is the single-page app entry and must bundle all runtime dependencies inline so the app works offline.
-- JS modules live at the repo root (e.g., `sum.js`).
 - Tests colocate using `*.test.js` (e.g., `sum.test.js`).
-- `node_modules/` holds dev dependencies only; runtime should not rely on its contents.
 
 ## Build, Test, and Development Commands
 - Install: `npm install` — installs dev dependencies (e.g., Jest).
@@ -31,5 +29,5 @@
 
 ## Security & Configuration Tips
 - Do not commit secrets or tokens. This repo is static; prefer client-safe configs only.
-- Large/generated assets: avoid adding unless necessary. `node_modules/` is currently tracked; do not edit it manually.
-- Browser compatibility: test in at least one Chromium-based browser; note any API assumptions in PRs.
+- Large/generated assets: avoid adding unless necessary.
+- Browser compatibility: test in at least one browser; note any API assumptions in PRs.
