@@ -221,7 +221,7 @@
             down:  { axis: 'y', angle: -Math.PI / 2 }
         };
         const colorMap = {
-            [colors.up]: 'U', [colors.down]: 'D', 
+            [colors.up]: 'U', [colors.down]: 'D',
             [colors.front]: 'F', [colors.back]: 'B',
             [colors.left]: 'L', [colors.right]: 'R',
             0x1a1a1a: 'X' // Non-visible face
@@ -243,20 +243,23 @@
         }
 
         async function initApp() {
+            const loadingEl = document.getElementById('loading');
             try {
-                document.getElementById('loading').textContent = 'Loading Three.js library...';
-                await loadThreeJS();
-                document.getElementById('loading').textContent = 'Initializing 3D scene...';
+                if (typeof THREE === 'undefined') {
+                    loadingEl.textContent = 'Loading Three.js library...';
+                    await loadThreeJS();
+                }
+                loadingEl.textContent = 'Initializing 3D scene...';
                 init();
                 document.getElementById('controls').style.display = 'block';
                 document.getElementById('info').style.display = 'block';
                 statusEl = document.getElementById('status');
                 statusEl.style.display = 'block';
                 updateStatus('Ready');
-                document.getElementById('loading').style.display = 'none';
+                loadingEl.style.display = 'none';
             } catch (error) {
                 console.error('Failed to initialize app:', error);
-                document.getElementById('loading').textContent = `Error: ${error.message}. Please refresh.`;
+                loadingEl.textContent = `Error: ${error.message}. Please refresh.`;
             }
         }
         
@@ -679,7 +682,11 @@
         }
         
         window.addEventListener('resize', handleResize);
-        window.addEventListener('DOMContentLoaded', initApp);
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
     </script>
 </body>
 </html>
