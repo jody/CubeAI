@@ -587,7 +587,12 @@
 
         async function handleFaceButtonClick(move) {
             if (isAnimating) return;
-            await performMove(move);
+            isAnimating = true;
+            try {
+                await performMove(move);
+            } finally {
+                isAnimating = false;
+            }
         }
         
         async function performMove(move) {
@@ -738,7 +743,7 @@
                 const findEdge = (c1, c2) =>
                     Object.values(this.state).find(p => p.colors && p.colors.length === 2 && p.colors.includes(c1) && p.colors.includes(c2));
 
-                const uFaceFromPos = pos => {
+                const sideFromPos = pos => {
                     if (pos.z === 1) return 'F';
                     if (pos.z === -1) return 'B';
                     if (pos.x === 1) return 'R';
@@ -746,55 +751,48 @@
                     return null;
                 };
 
-                const whiteFace = piece => {
+                const whiteSticker = piece => {
                     const s = piece.stickers || {};
                     return Object.keys(s).find(k => s[k] === white) || null;
                 };
 
                 const edgeSolved = side => {
                     const p = findEdge(white, centers[side]);
-                    return p && p.pos.y === 1 && whiteFace(p) === 'U' && uFaceFromPos(p.pos) === side;
+                    return p && p.pos.y === 1 && whiteSticker(p) === 'U' && sideFromPos(p.pos) === side;
                 };
 
-                const moveToTop = async side => {
-                    let piece = findEdge(white, centers[side]);
-                    while (piece.pos.y !== 1 || whiteFace(piece) !== 'U') {
-                        if (piece.pos.y === -1) {
-                            let face = uFaceFromPos(piece.pos);
-                            while (face !== side) {
+                const solveEdge = async side => {
+                    let safety = 0;
+                    while (!edgeSolved(side) && safety < 20) {
+                        let piece = findEdge(white, centers[side]);
+                        const pos = piece.pos;
+                        const wf = whiteSticker(piece);
+
+                        if (pos.y === 1) {
+                            while (sideFromPos(piece.pos) !== side) {
+                                await move('U');
+                                piece = findEdge(white, centers[side]);
+                            }
+                            if (wf !== 'U') await move(side + '2');
+                        } else if (pos.y === -1) {
+                            while (sideFromPos(piece.pos) !== side) {
                                 await move('D');
                                 piece = findEdge(white, centers[side]);
-                                face = uFaceFromPos(piece.pos);
                             }
-                            if (whiteFace(piece) === 'D') {
-                                await move(side + '2');
-                            } else {
-                                await move(side + ' D ' + side + "'");
-                            }
-                        } else if (piece.pos.y === 0) {
-                            const wf = whiteFace(piece);
-                            await move(wf + ' D ' + wf + "'");
+                            if (wf === 'D') await move(side + '2');
+                            else await move(side + ' D ' + side + "'");
                         } else {
-                            await move(side + ' U ' + side + "'");
+                            const face = wf === 'U' || wf === 'D' ? sideFromPos(piece.pos) : wf;
+                            await move(face + ' D ' + face + "'");
                         }
-                        piece = findEdge(white, centers[side]);
-                    }
-                };
 
-                const alignAndInsert = async side => {
-                    let piece = findEdge(white, centers[side]);
-                    while (uFaceFromPos(piece.pos) !== side) {
-                        await move('U');
-                        piece = findEdge(white, centers[side]);
-                    }
-                    if (!edgeSolved(side)) {
-                        await move(side + '2');
+                        this.state = this.getCubeState();
+                        safety++;
                     }
                 };
 
                 for (const side of ['F', 'R', 'B', 'L']) {
-                    await moveToTop(side);
-                    await alignAndInsert(side);
+                    await solveEdge(side);
                 }
 
                 const solved = ['F', 'R', 'B', 'L'].every(edgeSolved);
@@ -817,19 +815,22 @@
         async function scrambleCube() {
             if (isAnimating) return;
             isAnimating = true;
-            const moves = ["R", "L", "U", "D", "F", "B", "R'", "L'", "U'", "D'", "F'", "B'", "R2", "L2", "U2", "D2", "F2", "B2"];
+            const moves = ['R', 'L', 'U', 'D', 'F', 'B', "R'", "L'", "U'", "D'", "F'", "B'", 'R2', 'L2', 'U2', 'D2', 'F2', 'B2'];
             const scrambleLength = 25;
             const scramble = [];
             for (let i = 0; i < scrambleLength; i++) {
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 scramble.push(randomMove);
             }
-            
-            console.log("Scrambling with moves:", scramble.join(' '));
-            for (const move of scramble) {
-                await performMove(move);
+
+            console.log('Scrambling with moves:', scramble.join(' '));
+            try {
+                for (const mv of scramble) {
+                    await performMove(mv);
+                }
+            } finally {
+                isAnimating = false;
             }
-            isAnimating = false;
         }
 
         async function solveCube() {
