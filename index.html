@@ -218,6 +218,9 @@
             add(obj) {
               this.children.push(obj);
             }
+            remove(obj) {
+              this.children = this.children.filter(c => c !== obj);
+            }
             lookAt() {
               // noop in stub
             }
@@ -640,7 +643,7 @@
                 case 'down':  n = { ...c, front: c.right, right: c.back, back: c.left, left: c.front }; break;
                 case 'right': n = { ...c, up: c.back, back: c.down, down: c.front, front: c.up }; break;
                 case 'left':  n = { ...c, up: c.front, front: c.down, down: c.back, back: c.up }; break;
-                case 'front': n = { ...c, up: c.right, right: c.down, down: c.left, left: c.up }; break;
+                case 'front': n = { ...c, up: c.left, right: c.up, down: c.right, left: c.down }; break;
                 case 'back':  n = { ...c, up: c.left, left: c.down, down: c.right, right: c.up }; break;
             }
             cubelet.userData.faceColors = n;
@@ -762,6 +765,7 @@
                     await solveEdge(side);
                 }
 
+                this.state = this.getCubeState();
                 const solved = ['F', 'R', 'B', 'L'].every(edgeSolved);
                 this.updateStatus(solved ? 'White cross solved!' : 'White cross incomplete');
                 if (solved) alert('White cross solved!');
@@ -777,6 +781,8 @@
             if (isAnimating) return;
             scene.remove(cubeGroup);
             createCube();
+            cubeGroup.rotation.set(-0.5, 0.6, 0);
+            updateStatus('Cube reset');
         }
 
         async function scrambleCube() {
