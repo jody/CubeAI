@@ -1,10 +1,10 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root SPA: `index.html` is the single-page app entry.
+- Root SPA: `index.html` is the single-page app entry and must bundle all runtime dependencies inline so the app works offline.
 - JS modules live at the repo root (e.g., `sum.js`).
 - Tests colocate using `*.test.js` (e.g., `sum.test.js`).
-- Dependencies are in `node_modules/` (already committed). Avoid editing by hand.
+- `node_modules/` holds dev dependencies only; runtime should not rely on its contents.
 
 ## Build, Test, and Development Commands
 - Install: `npm install` — installs dev dependencies (e.g., Jest).
