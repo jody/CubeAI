@@ -717,21 +717,21 @@
                 return;
             }
             isAnimating = true;
-            updateStatus('Solving white cross...');
+            updateStatus('Solving cube...');
             const inverse = lastScramble.slice().reverse().map(invertMove);
 
             try {
                 for (const mv of inverse) {
                     await performMove(mv, false);
                     if (isWhiteCrossSolved()) {
-                        updateStatus('White cross complete');
-                        alert('White cross complete');
+                        updateStatus('Solution complete');
+                        alert('Solution complete');
                         lastScramble = [];
                         return;
                     }
                 }
-                updateStatus('White cross incomplete');
-                alert('White cross incomplete');
+                updateStatus('Solution incomplete');
+                alert('Solution incomplete');
             } finally {
                 isAnimating = false;
             }
