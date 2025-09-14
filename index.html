@@ -591,15 +591,16 @@
             }
         }
         
-        async function performMove(move) {
+        async function performMove(move, record = true) {
             const faceName = faces[move.charAt(0)];
             const isPrime = move.includes("'");
             const isDouble = move.includes("2");
             const turns = isDouble ? 2 : (isPrime ? 3 : 1);
-            
+
             for (let i = 0; i < turns; i++) {
                 await rotateFace(faceName, 300);
             }
+            if (record) lastScramble.push(move);
         }
         
         function rotateFace(face, duration = 0) {
@@ -645,7 +646,7 @@
                 case 'right': n = { ...c, up: c.back, back: c.down, down: c.front, front: c.up }; break;
                 case 'left':  n = { ...c, up: c.front, front: c.down, down: c.back, back: c.up }; break;
                 case 'front': n = { ...c, up: c.left, right: c.up, down: c.right, left: c.down }; break;
-                case 'back':  n = { ...c, up: c.left, left: c.down, down: c.right, right: c.up }; break;
+                case 'back':  n = { ...c, up: c.right, right: c.down, down: c.left, left: c.up }; break;
             }
             cubelet.userData.faceColors = n;
         }
@@ -690,14 +691,15 @@
             const moves = ['R', 'L', 'U', 'D', 'F', 'B', "R'", "L'", "U'", "D'", "F'", "B'", 'R2', 'L2', 'U2', 'D2', 'F2', 'B2'];
             const scrambleLength = 25;
             lastScramble = [];
+            const sequence = [];
             for (let i = 0; i < scrambleLength; i++) {
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
-                lastScramble.push(randomMove);
+                sequence.push(randomMove);
             }
 
-            console.log('Scrambling with moves:', lastScramble.join(' '));
+            console.log('Scrambling with moves:', sequence.join(' '));
             try {
-                for (const mv of lastScramble) {
+                for (const mv of sequence) {
                     await performMove(mv);
                 }
             } finally {
@@ -720,7 +722,7 @@
 
             try {
                 for (const mv of inverse) {
-                    await performMove(mv);
+                    await performMove(mv, false);
                     if (isWhiteCrossSolved()) {
                         updateStatus('White cross complete');
                         alert('White cross complete');
