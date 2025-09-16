@@ -670,6 +670,26 @@
             });
         }
 
+        function getExpectedFaceColors(position) {
+            return {
+                right: position.x === 1 ? colors.right : 0x1a1a1a,
+                left: position.x === -1 ? colors.left : 0x1a1a1a,
+                up: position.y === 1 ? colors.up : 0x1a1a1a,
+                down: position.y === -1 ? colors.down : 0x1a1a1a,
+                front: position.z === 1 ? colors.front : 0x1a1a1a,
+                back: position.z === -1 ? colors.back : 0x1a1a1a
+            };
+        }
+
+        function isCubeSolved() {
+            return cubelets.every(cubelet => {
+                const pos = cubelet.userData.logicalPosition;
+                const expected = getExpectedFaceColors(pos);
+                const actual = cubelet.userData.faceColors;
+                return Object.keys(expected).every(face => actual[face] === expected[face]);
+            });
+        }
+
         function invertMove(move) {
             if (move.includes('2')) return move;
             return move.endsWith("'") ? move.replace("'", '') : move + "'";
@@ -716,22 +736,40 @@
                 updateStatus('Nothing to solve');
                 return;
             }
+            if (isCubeSolved()) {
+                updateStatus('Solution complete');
+                alert('Solution complete');
+                lastScramble = [];
+                return;
+            }
             isAnimating = true;
             updateStatus('Solving cube...');
             const inverse = lastScramble.slice().reverse().map(invertMove);
+            const maxAttempts = 3;
+            let attempts = 0;
+            let solved = false;
 
             try {
-                for (const mv of inverse) {
-                    await performMove(mv, false);
-                    if (isWhiteCrossSolved()) {
-                        updateStatus('Solution complete');
-                        alert('Solution complete');
-                        lastScramble = [];
-                        return;
+                while (!solved && attempts < maxAttempts) {
+                    attempts++;
+                    for (const mv of inverse) {
+                        await performMove(mv, false);
+                        if (isCubeSolved()) {
+                            solved = true;
+                            break;
+                        }
                     }
                 }
-                updateStatus('Solution incomplete');
-                alert('Solution incomplete');
+                if (solved) {
+                    const attemptLabel = attempts > 1 ? ` after ${attempts} tries` : '';
+                    updateStatus(`Solution complete${attemptLabel}`);
+                    alert('Solution complete');
+                    lastScramble = [];
+                } else {
+                    const attemptLabel = attempts ? ` after ${attempts} tries` : '';
+                    updateStatus(`Solution incomplete${attemptLabel}`);
+                    alert('Solution incomplete');
+                }
             } finally {
                 isAnimating = false;
             }
