@@ -97,7 +97,67 @@
             font-size: 12px;
             backdrop-filter: blur(10px);
         }
-        
+
+        #move-log {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 12px;
+            color: white;
+            font-size: 12px;
+            width: 240px;
+            max-height: 45vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
+        }
+
+        #move-log h3 {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+        }
+
+        #move-log ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #move-log li {
+            margin-bottom: 6px;
+            line-height: 1.4;
+            word-break: break-word;
+            opacity: 0.9;
+        }
+
+        #move-log li:last-child {
+            margin-bottom: 0;
+        }
+
+        #move-log li.log-note {
+            color: #a8dadc;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.8;
+        }
+
+        #move-log li[data-source="solve"] {
+            color: #a8e063;
+        }
+
+        #move-log li[data-source="manual"] {
+            color: #ffd166;
+        }
+
+        #move-log li[data-source="scramble"] {
+            color: #4cc9f0;
+        }
+
         #reset-btn, #scramble-btn, #solve-btn {
             background: linear-gradient(135deg, #48cae4, #0077b6);
             margin-top: 5px;
@@ -113,7 +173,7 @@
         }
         
         #scramble-btn:hover {
-            box-shadow: 0 5-px 15px rgba(247, 37, 133, 0.4);
+            box-shadow: 0 5px 15px rgba(247, 37, 133, 0.4);
         }
 
         #solve-btn {
@@ -190,8 +250,12 @@
             <strong>SOLVE:</strong> Animate the solution for a scrambled cube.
         </div>
         <div id="status" style="display: none;">Status: Idle</div>
+        <div id="move-log" style="display: none;">
+            <h3>MOVE LOG</h3>
+            <ul id="move-log-list"></ul>
+        </div>
     </div>
-    
+
     <script>
         // Minimal embedded Three.js subset to allow offline use without external files.
         // This stub provides only the features required by the app and is not a full implementation.
@@ -290,7 +354,10 @@
               // noop in stub
             }
             render() {
-              const ctx = this.context;
+              const ctx = this.context || this.domElement.getContext('2d');
+              if (!ctx) {
+                return;
+              }
               const w = this.domElement.width;
               const h = this.domElement.height;
               ctx.clearRect(0, 0, w, h);
@@ -372,6 +439,9 @@
         let isAnimating = false;
         let statusEl;
         let lastScramble = [];
+        let moveLogEl;
+        let moveLogList;
+        let solveAttemptCount = 0;
         
         // --- CUBE CONSTANTS ---
         const colors = {
@@ -390,6 +460,12 @@
             [colors.front]: 'F', [colors.back]: 'B',
             [colors.left]: 'L', [colors.right]: 'R',
             0x1a1a1a: 'X' // Non-visible face
+        };
+
+        const DEFAULT_CUBE_ROTATION = {
+            x: -Math.PI / 6,
+            y: Math.PI / 4,
+            z: 0
         };
 
         const FACE_NORMALS = {
@@ -445,21 +521,89 @@
             if (statusEl) statusEl.textContent = text;
         }
 
+        function clearMoveLog() {
+            if (moveLogList) {
+                moveLogList.innerHTML = '';
+            }
+        }
+
+        function appendMoveLogNote(text) {
+            if (!moveLogList || !moveLogEl) return;
+            const note = document.createElement('li');
+            note.textContent = text;
+            note.className = 'log-note';
+            moveLogList.appendChild(note);
+            while (moveLogList.children.length > 200) {
+                moveLogList.removeChild(moveLogList.firstChild);
+            }
+            moveLogEl.scrollTop = moveLogEl.scrollHeight;
+        }
+
+        function appendMoveToLog(move, source = 'manual') {
+            if (!moveLogList || !moveLogEl) return;
+            const labels = { manual: 'Manual', solve: 'Solve', scramble: 'Scramble' };
+            const entry = document.createElement('li');
+            entry.textContent = `${labels[source] || 'Move'}: ${move}`;
+            entry.dataset.source = source;
+            moveLogList.appendChild(entry);
+            while (moveLogList.children.length > 200) {
+                moveLogList.removeChild(moveLogList.firstChild);
+            }
+            moveLogEl.scrollTop = moveLogEl.scrollHeight;
+        }
+
+        function showElement(el, displayValue = 'block') {
+            if (!el) return false;
+            el.style.display = displayValue;
+            return true;
+        }
+
         async function initApp() {
             const loadingEl = document.getElementById('loading');
+            if (!loadingEl) {
+                console.error('Loading indicator missing from DOM; cube UI cannot start.');
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            loadingEl.textContent = 'Initializing 3D scene...';
+
             try {
-                loadingEl.textContent = 'Initializing 3D scene...';
                 init();
-                document.getElementById('controls').style.display = 'block';
-                document.getElementById('info').style.display = 'block';
-                statusEl = document.getElementById('status');
-                statusEl.style.display = 'block';
-                updateStatus('Ready');
-                loadingEl.style.display = 'none';
             } catch (error) {
                 console.error('Failed to initialize app:', error);
                 loadingEl.textContent = `Error: ${error.message}. Please refresh.`;
+                return;
             }
+
+            const controlsEl = document.getElementById('controls');
+            const infoEl = document.getElementById('info');
+            const statusDisplay = document.getElementById('status');
+            moveLogEl = document.getElementById('move-log');
+            moveLogList = document.getElementById('move-log-list');
+
+            if (!showElement(controlsEl) || !showElement(infoEl)) {
+                console.error('Required UI panels are missing from the DOM.');
+                loadingEl.textContent = 'Error: required UI panels are missing.';
+                return;
+            }
+
+            if (statusDisplay) {
+                statusEl = statusDisplay;
+                showElement(statusEl);
+            } else {
+                console.warn('Status element missing from DOM. Status updates will be skipped.');
+            }
+
+            if (moveLogEl && moveLogList) {
+                showElement(moveLogEl);
+                clearMoveLog();
+            } else {
+                console.warn('Move log elements missing from DOM. Skipping overlay setup.');
+            }
+
+            updateStatus('Ready');
+            loadingEl.style.display = 'none';
         }
         
         function init() {
@@ -468,7 +612,13 @@
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 0);
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const canvasHost = document.getElementById('canvas-container');
+            if (!canvasHost) {
+                throw new Error('Canvas container missing from DOM.');
+            }
+            canvasHost.innerHTML = '';
+            canvasHost.appendChild(renderer.domElement);
             
             const ambientLight = new THREE.AmbientLight(0x404040, 2);
             scene.add(ambientLight);
@@ -477,9 +627,8 @@
             scene.add(directionalLight);
             
             createCube();
-            cubeGroup.rotation.x = -0.5;
-            cubeGroup.rotation.y = 0.6;
-            camera.position.set(5, 5, 5);
+            setDefaultCubeOrientation();
+            camera.position.set(6, 6, 6);
             camera.lookAt(0, 0, 0);
             initDragControls();
             animate();
@@ -497,6 +646,15 @@
                     }
                 }
             }
+        }
+
+        function setDefaultCubeOrientation() {
+            if (!cubeGroup) return;
+            cubeGroup.rotation.set(
+                DEFAULT_CUBE_ROTATION.x,
+                DEFAULT_CUBE_ROTATION.y,
+                DEFAULT_CUBE_ROTATION.z
+            );
         }
 
         function initDragControls() {
@@ -591,8 +749,15 @@
             }
         }
         
-        async function performMove(move, record = true) {
-            const faceName = faces[move.charAt(0)];
+        async function performMove(move, options = {}) {
+            const { record = true, log = true, source = 'manual' } = options;
+            const faceKey = move.charAt(0);
+            const faceName = faces[faceKey];
+            if (!faceName) {
+                console.warn('Unknown move received:', move);
+                return;
+            }
+            if (log) appendMoveToLog(move, source);
             const isPrime = move.includes("'");
             const isDouble = move.includes("2");
             const turns = isDouble ? 2 : (isPrime ? 3 : 1);
@@ -700,14 +865,19 @@
             if (isAnimating) return;
             scene.remove(cubeGroup);
             createCube();
-            cubeGroup.rotation.set(-0.5, 0.6, 0);
+            setDefaultCubeOrientation();
             updateStatus('Cube reset');
             lastScramble = [];
+            solveAttemptCount = 0;
+            clearMoveLog();
+            appendMoveLogNote('Cube reset');
         }
 
         async function scrambleCube() {
             if (isAnimating) return;
             isAnimating = true;
+            solveAttemptCount = 0;
+            appendMoveLogNote('Scramble started');
             const moves = ['R', 'L', 'U', 'D', 'F', 'B', "R'", "L'", "U'", "D'", "F'", "B'", 'R2', 'L2', 'U2', 'D2', 'F2', 'B2'];
             const scrambleLength = 25;
             lastScramble = [];
@@ -720,8 +890,9 @@
             console.log('Scrambling with moves:', sequence.join(' '));
             try {
                 for (const mv of sequence) {
-                    await performMove(mv);
+                    await performMove(mv, { source: 'scramble', log: false });
                 }
+                appendMoveLogNote('Scramble complete');
             } finally {
                 isAnimating = false;
             }
@@ -734,14 +905,18 @@
             }
             if (!lastScramble.length) {
                 updateStatus('Nothing to solve');
+                appendMoveLogNote('Solve requested with no scramble history');
                 return;
             }
             if (isCubeSolved()) {
                 updateStatus('Solution complete');
                 alert('Solution complete');
                 lastScramble = [];
+                appendMoveLogNote('Cube already solved');
                 return;
             }
+            solveAttemptCount += 1;
+            appendMoveLogNote(`Solve attempt #${solveAttemptCount}`);
             isAnimating = true;
             updateStatus('Solving cube...');
             const inverse = lastScramble.slice().reverse().map(invertMove);
@@ -753,7 +928,7 @@
                 while (!solved && attempts < maxAttempts) {
                     attempts++;
                     for (const mv of inverse) {
-                        await performMove(mv, false);
+                        await performMove(mv, { record: false, source: 'solve' });
                         if (isCubeSolved()) {
                             solved = true;
                             break;
@@ -765,10 +940,12 @@
                     updateStatus(`Solution complete${attemptLabel}`);
                     alert('Solution complete');
                     lastScramble = [];
+                    appendMoveLogNote('Solve complete');
                 } else {
                     const attemptLabel = attempts ? ` after ${attempts} tries` : '';
                     updateStatus(`Solution incomplete${attemptLabel}`);
                     alert('Solution incomplete');
+                    appendMoveLogNote('Solve incomplete');
                 }
             } finally {
                 isAnimating = false;
