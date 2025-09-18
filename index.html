@@ -552,29 +552,58 @@
             moveLogEl.scrollTop = moveLogEl.scrollHeight;
         }
 
+        function showElement(el, displayValue = 'block') {
+            if (!el) return false;
+            el.style.display = displayValue;
+            return true;
+        }
+
         async function initApp() {
             const loadingEl = document.getElementById('loading');
+            if (!loadingEl) {
+                console.error('Loading indicator missing from DOM; cube UI cannot start.');
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            loadingEl.textContent = 'Initializing 3D scene...';
+
             try {
-                loadingEl.textContent = 'Initializing 3D scene...';
                 init();
-                document.getElementById('controls').style.display = 'block';
-                document.getElementById('info').style.display = 'block';
-                statusEl = document.getElementById('status');
-                statusEl.style.display = 'block';
-                moveLogEl = document.getElementById('move-log');
-                moveLogList = document.getElementById('move-log-list');
-                if (moveLogEl && moveLogList) {
-                    moveLogEl.style.display = 'block';
-                    clearMoveLog();
-                } else {
-                    console.warn('Move log elements missing from DOM. Skipping overlay setup.');
-                }
-                updateStatus('Ready');
-                loadingEl.style.display = 'none';
             } catch (error) {
                 console.error('Failed to initialize app:', error);
                 loadingEl.textContent = `Error: ${error.message}. Please refresh.`;
+                return;
             }
+
+            const controlsEl = document.getElementById('controls');
+            const infoEl = document.getElementById('info');
+            const statusDisplay = document.getElementById('status');
+            moveLogEl = document.getElementById('move-log');
+            moveLogList = document.getElementById('move-log-list');
+
+            if (!showElement(controlsEl) || !showElement(infoEl)) {
+                console.error('Required UI panels are missing from the DOM.');
+                loadingEl.textContent = 'Error: required UI panels are missing.';
+                return;
+            }
+
+            if (statusDisplay) {
+                statusEl = statusDisplay;
+                showElement(statusEl);
+            } else {
+                console.warn('Status element missing from DOM. Status updates will be skipped.');
+            }
+
+            if (moveLogEl && moveLogList) {
+                showElement(moveLogEl);
+                clearMoveLog();
+            } else {
+                console.warn('Move log elements missing from DOM. Skipping overlay setup.');
+            }
+
+            updateStatus('Ready');
+            loadingEl.style.display = 'none';
         }
         
         function init() {
@@ -583,7 +612,13 @@
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 0);
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const canvasHost = document.getElementById('canvas-container');
+            if (!canvasHost) {
+                throw new Error('Canvas container missing from DOM.');
+            }
+            canvasHost.innerHTML = '';
+            canvasHost.appendChild(renderer.domElement);
             
             const ambientLight = new THREE.AmbientLight(0x404040, 2);
             scene.add(ambientLight);
