@@ -173,7 +173,7 @@
         }
         
         #scramble-btn:hover {
-            box-shadow: 0 5-px 15px rgba(247, 37, 133, 0.4);
+            box-shadow: 0 5px 15px rgba(247, 37, 133, 0.4);
         }
 
         #solve-btn {
@@ -354,7 +354,10 @@
               // noop in stub
             }
             render() {
-              const ctx = this.context;
+              const ctx = this.context || this.domElement.getContext('2d');
+              if (!ctx) {
+                return;
+              }
               const w = this.domElement.width;
               const h = this.domElement.height;
               ctx.clearRect(0, 0, w, h);
@@ -560,8 +563,12 @@
                 statusEl.style.display = 'block';
                 moveLogEl = document.getElementById('move-log');
                 moveLogList = document.getElementById('move-log-list');
-                moveLogEl.style.display = 'block';
-                clearMoveLog();
+                if (moveLogEl && moveLogList) {
+                    moveLogEl.style.display = 'block';
+                    clearMoveLog();
+                } else {
+                    console.warn('Move log elements missing from DOM. Skipping overlay setup.');
+                }
                 updateStatus('Ready');
                 loadingEl.style.display = 'none';
             } catch (error) {
